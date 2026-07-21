@@ -1,0 +1,31 @@
+# working notes / session docs (per project convention — not for the repo)
+docs/
+
+# regenerable terrain DEM (rebuilt by mod_terrain.R via elevatr on first run)
+outputs/location-maps/*.tif
+
+# superseded prior-session exploration artifacts
+outputs/location-maps/*-v1*
+outputs/location-maps/*-v2*
+outputs/location-maps/*-v3*
+outputs/location-maps/*-linked.svg
+outputs/location-maps/*.svg.png
+
+# intermediate proof / QA check / debug renders (regenerated on demand)
+outputs/location-maps/PROOF-*.png
+outputs/location-maps/*-check*.png
+outputs/location-maps/*-debug*.png
+outputs/location-maps/*-layered-[0-9]*.png
+outputs/location-maps/inspect-*.png
+outputs/location-maps/A-oceanfill*.png
+outputs/location-maps/B-mainmap*.png
+outputs/location-maps/C-inset*.png
+outputs/location-maps/D-terrain*.png
+
+# stray scratch artifacts
+scratchpad_*
+
+# tooling / OS
+.gstack/
+.claude/
+.DS_Store
