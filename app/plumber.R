@@ -54,6 +54,8 @@ card <- function(id) {
 PAGE <- '<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Shipwright Maps</title>
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{--ink:#101820;--gold:#F2C14E;--paper:#F7F5F0;--line:#D9D4C8;--muted:#5A6570}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
@@ -96,3 +98,15 @@ function(id, res) {
 #* @get /healthz
 #* @serializer text
 function() "ok"
+
+# Shipwright mark from shipwright.biz, in app/static/.
+static_file <- function(name) readBin(file.path(ROOT, "app/static", name), "raw",
+                                      file.size(file.path(ROOT, "app/static", name)))
+
+#* @get /favicon.ico
+#* @serializer contentType list(type = "image/x-icon")
+function() static_file("favicon.ico")
+
+#* @get /apple-touch-icon.png
+#* @serializer contentType list(type = "image/png")
+function() static_file("apple-touch-icon.png")
