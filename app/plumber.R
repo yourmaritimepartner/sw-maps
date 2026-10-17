@@ -73,7 +73,7 @@ button:disabled{background:var(--muted);cursor:wait}
 .err{white-space:pre-wrap;background:#FFF4F2;border:1px solid #E8B4AA;padding:12px;font-size:13px;margin:14px 0 0}
 </style></head><body><main>
 <h1>Shipwright Maps</h1>
-<p>Location maps for project reports. Download any format, or re-render after a config change.</p>
+<p>Office location maps for project reports: PNG, SVG, PDF, or layered SVG for Illustrator. Custom sizes and new work sites are coming next.</p>
 %s
 </main></body></html>'
 
