@@ -1,5 +1,5 @@
 # Comp C — MAIN SITE. Bridges to shipwright.biz for proposals and collateral: Caslon
-# masthead (Libre Caslon stands in for the site's Adobe Caslon), the original logo mark,
+# masthead (Libre Caslon stands in for the site's Adobe Caslon), the whole logo lockup,
 # fuller sea and relief, italic serif water names. Full-bleed map with a title plate.
 style <- list(
   id = "mainsite", label = "C · Main site",
@@ -16,5 +16,5 @@ style <- list(
   terrain = list(on = TRUE, alpha = 0.34, shadow = "#4A4438", light = "#FFFCF5"),
   graticule = FALSE,
   water_italic = TRUE,
-  logo = "app/static/sw-mark-260.png"
+  logo = "app/static/shipwright-logo-vertical.png"   # official vertical lockup, always used whole
 )

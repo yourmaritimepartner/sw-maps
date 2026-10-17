@@ -149,10 +149,15 @@ if (style$title_mode == "plate") {
     grid::convertWidth(grid::grobWidth(grid::textGrob(txt, gp = grid::gpar(fontfamily = fam, fontsize = size * ts))),
                        "in", valueOnly = TRUE)
   }
-  plate_w <- (0.28 + (if (!is.null(style$logo)) 0.6 else 0)) * ts +
-    max(tw(sub(" · ", " — ", office$name), FT$title, 13.5), tw(office$subtitle, FT$label, 7),
-        tw(sources, FT$mono, 5) - 0.6 * ts)
-  plate_pl <- place(plate_w / map_w, 0.86 * ts / map_h, avoid = taken, corners = c("tl", "tr", "bl", "br"))
+  # The logo is one unit (mark + wordmark + tagline): placed whole, never split or
+  # recoloured. It already says "Shipwright", so the plate titles the office only.
+  LOGO_IN <- 1.0 * ts
+  plate_title <- sub("^Shipwright · ", "", office$name)
+  credit_lines <- c("\u00A9 OpenStreetMap contributors", "US Census TIGER/Line 2022 \u00B7 Natural Earth")
+  plate_w <- (0.12 + 0.24 + 0.14) * ts + (if (!is.null(style$logo)) LOGO_IN else 0) +
+    max(tw(plate_title, FT$title, 16), tw(office$subtitle, FT$label, 7), tw(credit_lines, FT$mono, 5))
+  plate_h <- LOGO_IN + 0.2 * ts
+  plate_pl <- place(plate_w / map_w, plate_h / map_h, avoid = taken, corners = c("tl", "tr", "bl", "br"))
   taken <- c(taken, list(plate_pl$r))
 }
 
@@ -366,16 +371,18 @@ if (style$title_mode == "block") {
 if (style$title_mode == "plate" && !is.null(plate_pl)) {
   pr <- plate_pl$r; p <- c(cx(pr[1]), cy(pr[2]), cx(pr[3]), cy(pr[4]))
   canvas <- canvas + annotate("rect", xmin = p[1], xmax = p[3], ymin = p[2], ymax = p[4], fill = C$paper, colour = NA)
-  lx <- p[1] + ix(0.1 * ts)
+  lx <- p[1] + ix(0.12 * ts)
   if (!is.null(style$logo) && file.exists(file.path(ROOT, style$logo))) {
-    lg <- png::readPNG(file.path(ROOT, style$logo)); ls <- 0.5 * ts
-    canvas <- canvas + draw_grob(grid::rasterGrob(lg), lx, p[4] - iy(0.13 * ts) - iy(ls), ix(ls), iy(ls))
-    lx <- lx + ix(ls + 0.1 * ts)
+    lg <- png::readPNG(file.path(ROOT, style$logo))
+    canvas <- canvas + draw_grob(grid::rasterGrob(lg), lx, p[2] + iy(0.1 * ts), ix(LOGO_IN), iy(LOGO_IN))
+    lx <- lx + ix(LOGO_IN + 0.24 * ts)
+    canvas <- canvas + draw_line(x = c(lx - ix(0.12 * ts), lx - ix(0.12 * ts)), y = c(p[2] + iy(0.16 * ts), p[4] - iy(0.16 * ts)),
+                                 colour = C$rule, linewidth = lw(0.5))
   }
   canvas <- canvas |>
-    lab_at(sub(" · ", " — ", office$name), lx, p[4] - iy(0.14 * ts), FT$title, "plain", 13.5, C$ink, vjust = 1) |>
-    lab_at(office$subtitle, lx, p[4] - iy(0.42 * ts), FT$label, "plain", 7, C$dim, vjust = 1) |>
-    lab_at(sources, p[1] + ix(0.1 * ts), p[2] + iy(0.08 * ts), FT$mono, "plain", 5, C$faint, vjust = 0)
+    lab_at(plate_title, lx, p[4] - iy(0.2 * ts), FT$title, "plain", 16, C$ink, vjust = 1) |>
+    lab_at(office$subtitle, lx, p[4] - iy(0.52 * ts), FT$label, "plain", 7, C$dim, vjust = 1) |>
+    lab_at(paste(credit_lines, collapse = "\n"), lx, p[2] + iy(0.14 * ts), FT$mono, "plain", 5, C$faint, vjust = 0, lh = 1.3)
 }
 
 # ---- write -------------------------------------------------------------------
