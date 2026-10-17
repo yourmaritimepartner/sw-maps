@@ -95,6 +95,36 @@ function(id, res) {
   res
 }
 
+COMPS <- file.path(ROOT, "outputs/comps")
+COMP_STYLES <- c(platform = "A · Platform — BD apps design language, header above the map",
+                 drawing  = "B · Drawing — quiet grey base, neatline ticks, title block",
+                 mainsite = "C · Main site — shipwright.biz Caslon, logo, full-bleed relief")
+
+#* Design comps (scripts/comp_map.R), grouped by office.
+#* @get /comps
+#* @serializer html
+function() {
+  files <- list.files(COMPS, "\\.png$")
+  ids <- unique(sub("-.*$", "", files))
+  body <- vapply(ids, function(id) {
+    o <- office_cfg(id)
+    figs <- vapply(names(COMP_STYLES), function(st) {
+      f <- grep(paste0("^", id, "-", st, "-"), files, value = TRUE)
+      if (!length(f)) return("")
+      v <- as.integer(file.mtime(file.path(COMPS, f[1])))
+      sprintf('<figure><a href="/comp-files/%s?v=%d"><img src="/comp-files/%s?v=%d" alt="%s, %s" loading="lazy"></a><figcaption>%s</figcaption></figure>',
+              f[1], v, f[1], v, esc(o$name), esc(COMP_STYLES[[st]]), esc(COMP_STYLES[[st]]))
+    }, "")
+    sprintf("<section><header><h2>%s</h2><p>Report full-width, 6.5 in at 300 dpi</p></header>%s</section>",
+            esc(o$name), paste(figs, collapse = ""))
+  }, "")
+  page <- sub("<h1>Shipwright Maps</h1>", "<h1>Map design comps</h1>", PAGE, fixed = TRUE)
+  page <- sub("<p>Office location maps[^<]*</p>",
+              "<p>Three directions on the same data, at the size they print. Click a comp for full resolution. <a href=\"/\">Back to maps</a></p>", page)
+  page <- sub("</style>", "figure{margin:0 0 22px}figcaption{color:var(--muted);font-size:14px;margin-top:6px}</style>", page, fixed = TRUE)
+  sprintf(page, paste(body, collapse = "\n"))
+}
+
 #* @get /healthz
 #* @serializer text
 function() "ok"

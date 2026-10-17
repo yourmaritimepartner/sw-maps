@@ -6,4 +6,5 @@ ROOT <- Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps"))
 
 pr(file.path(ROOT, "app/plumber.R")) |>
   pr_static("/files", file.path(ROOT, "outputs/location-maps")) |>
+  pr_static("/comp-files", file.path(ROOT, "outputs/comps")) |>
   pr_run(host = "0.0.0.0", port = as.integer(Sys.getenv("PORT", "8000")), docs = FALSE)

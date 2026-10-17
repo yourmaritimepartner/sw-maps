@@ -100,8 +100,14 @@ hillshade_raster <- function(bbox4326 = TERRAIN_MAIN_BBOX, z = 12) {
 # whose slopes carry a soft shadow / whisper of highlight, scaled by `alpha`.
 # Sea (elev < 0) is transparent so the ocean fill shows through. Added first,
 # it sits UNDER the vector layers as a gentle relief base.
-terrain_layer <- function(bbox4326 = TERRAIN_MAIN_BBOX, alpha = 0.35, z = 12) {
+terrain_layer <- function(bbox4326 = TERRAIN_MAIN_BBOX, alpha = 0.35, z = 12,
+                          land = NULL, shadow = NULL, light = NULL) {
   bb <- .norm_bbox(bbox4326)
+  # optional hex overrides for the blend anchors (styles with a different land colour)
+  hex3 <- function(h, d) if (is.null(h)) d else as.numeric(grDevices::col2rgb(h)) / 255
+  .TERRAIN_LAND   <- hex3(land,   .TERRAIN_LAND)
+  .TERRAIN_SHADOW <- hex3(shadow, .TERRAIN_SHADOW)
+  .TERRAIN_LIGHT  <- hex3(light,  .TERRAIN_LIGHT)
 
   dem <- dem_raster(bb, z = z)
   hs  <- hillshade_raster(bb, z = z)
