@@ -39,7 +39,7 @@ TERRAIN_MAIN_BBOX <- c(xmin = -157.98, ymin = 21.24, xmax = -157.79, ymax = 21.4
 .TERRAIN_LIGHT  <- c(255, 252, 245) / 255  # #FFFCF5 warm near-white highlight
 
 .terrain_outdir <- function() {
-  d <- path.expand("~/sw-projects/sw-locations/outputs/location-maps")
+  d <- file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "outputs/location-maps")
   dir.create(d, showWarnings = FALSE, recursive = TRUE)
   d
 }

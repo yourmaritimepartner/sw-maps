@@ -1,11 +1,11 @@
 #!/usr/bin/env Rscript
 # Verification renders for mod_oceanfill.R -- proves ocean fills at INSET and MAIN bbox.
 suppressPackageStartupMessages({ library(sf); library(ggplot2); library(ragg) })
-source(path.expand("~/sw-projects/sw-locations/scripts/mod_oceanfill.R"))
+source(file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "scripts/mod_oceanfill.R"))
 
 WATER <- "#7FB0C9"   # deeper calm blue (contract palette)
 LANDC <- "#EDE7DB"   # warm neutral (panel land)
-outdir <- path.expand("~/sw-projects/sw-locations/outputs/location-maps")
+outdir <- file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "outputs/location-maps")
 dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
 render_one <- function(bbox, title, file) {

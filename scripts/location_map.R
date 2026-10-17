@@ -32,7 +32,7 @@ FONT <- local({
 })
 
 # ---- PATHS ------------------------------------------------------------------
-ROOT    <- path.expand("~/sw-projects/sw-locations")
+ROOT    <- Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps"))
 SCR     <- file.path(ROOT, "scripts")
 OUT     <- file.path(ROOT, "outputs/location-maps")
 CONFIGS <- file.path(ROOT, "configs")

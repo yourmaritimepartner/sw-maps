@@ -55,7 +55,7 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
   if (!is.null(.oceanfill_cache[[key]])) return(.oceanfill_cache[[key]])
 
   # optional on-disk cache (spares Overpass across process restarts)
-  cache_dir <- path.expand("~/sw-projects/sw-locations/outputs/location-maps")
+  cache_dir <- file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "outputs/location-maps")
   cache_file <- file.path(cache_dir, paste0("coastline-", key, ".rds"))
   if (disk_cache && file.exists(cache_file)) {
     ln <- readRDS(cache_file)
@@ -72,7 +72,7 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
   query <- sprintf(
     '[out:xml][timeout:90];way["natural"="coastline"](%.6f,%.6f,%.6f,%.6f);(._;>;);out body;',
     bb["ymin"], bb["xmin"], bb["ymax"], bb["xmax"])
-  ua <- "sw-locations-oceanfill/1.0 (Shipwright location map; contact j@djinna.com)"
+  ua <- "sw-maps-oceanfill/1.0 (Shipwright location map; contact j@djinna.com)"
   osm_status_ok <- function(f) file.exists(f) && file.info(f)$size > 500 &&
     any(grepl("<osm", readLines(f, n = 5, warn = FALSE)))
 

@@ -1,4 +1,4 @@
-# Shipwright location maps
+# Shipwright Maps (sw-maps)
 
 Reusable, parameterized R pipeline that renders a flat-vector cartographic
 **location map** for each Shipwright office: a main establishing map (regional
@@ -18,6 +18,24 @@ Rscript scripts/location_map.R florida
 ```
 
 A new office = one new file in `configs/`. No code changes needed for the common case.
+
+Scripts resolve the repo from `SW_MAPS_ROOT` (default `~/sw-projects/sw-maps`).
+
+## Web front — https://sw-maps.exe.xyz
+
+Team-private page (exe.dev login, shared with the `sw` team) listing every office in
+`configs/`, with a Re-render button and PNG / SVG / PDF / layered-SVG downloads.
+Runs on the `sw-maps` VM (exe-shipwright account) as `sw-maps.service`:
+
+```
+app/plumber.R           routes: /  (page), POST /render/<id>, /files/* (outputs), /healthz
+app/serve.R             starts plumber on :8000 (exe.dev proxies HTTPS -> :8000)
+deploy/sw-maps.service  systemd unit (repo at /home/exedev/sw-maps)
+```
+
+Deploy: `ssh sw-maps.exe.xyz 'cd ~/sw-maps && git pull && sudo systemctl restart sw-maps'`.
+The VM is the canonical renderer; Mac renders differ by ~1% of pixels (Arial
+version metrics, road antialiasing).
 
 ## Layout
 

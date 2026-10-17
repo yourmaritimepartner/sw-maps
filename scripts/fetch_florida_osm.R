@@ -6,7 +6,7 @@ suppressPackageStartupMessages({
   library(sf); library(osmdata)
 })
 
-ROOT <- path.expand("~/sw-projects/sw-locations")
+ROOT <- Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps"))
 OUT  <- file.path(ROOT, "outputs/location-maps")
 dir.create(OUT, showWarnings = FALSE, recursive = TRUE)
 
@@ -32,7 +32,7 @@ endpoints <- c(
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter"
 )
-ua <- "sw-locations-florida/1.0 (Shipwright location map; contact j@djinna.com)"
+ua <- "sw-maps-florida/1.0 (Shipwright location map; contact j@djinna.com)"
 valid_osm <- function(path) {
   file.exists(path) && file.info(path)$size > 500 &&
     any(grepl("<osm", readLines(path, n = 5, warn = FALSE), fixed = TRUE))

@@ -1,0 +1,15 @@
+[Unit]
+Description=Shipwright Maps (sw-maps web front)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/sw-maps
+Environment=SW_MAPS_ROOT=/home/exedev/sw-maps
+ExecStart=/usr/bin/Rscript app/serve.R
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

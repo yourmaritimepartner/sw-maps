@@ -237,7 +237,7 @@ build_main <- function(bbox4326 = MAIN_BBOX, office_sf, oceanfill = NULL,
 
 ## ---- bare render (only when run directly: `Rscript mod_mainmap.R`) -----------
 if (sys.nframe() == 0L) {
-  outdir <- path.expand("~/sw-projects/sw-locations/outputs/location-maps")
+  outdir <- file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "outputs/location-maps")
   dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
   office <- sf::st_sf(

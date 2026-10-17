@@ -4,7 +4,7 @@ suppressPackageStartupMessages({
   library(sf); library(ggplot2); library(cowplot); library(ragg)
 })
 
-ROOT <- path.expand("~/sw-projects/sw-locations")
+ROOT <- Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps"))
 OUT  <- file.path(ROOT, "outputs/location-maps")
 cache <- readRDS(file.path(OUT, "florida-osm.rds"))
 TARGET_ID <- "1156538249"

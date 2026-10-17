@@ -8,7 +8,7 @@ suppressPackageStartupMessages({
 `%||%` <- function(a, b) if (is.null(a)) b else a
 nrow0 <- function(x) if (is.null(x)) 0L else nrow(x)
 
-outdir <- path.expand("~/sw-projects/sw-locations/outputs/location-maps")
+outdir <- file.path(Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps")), "outputs/location-maps")
 dir.create(outdir, showWarnings = FALSE, recursive = TRUE)
 
 # Inset bbox ~ matches JD's screenshot extent (Honolulu Harbor Piers 19-40 + Chinatown)
