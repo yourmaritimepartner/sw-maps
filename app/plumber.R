@@ -21,6 +21,11 @@ esc <- function(x) {
 }
 last_error <- new.env()   # id -> tail of the failed render's log
 
+# Images that take review notes carry data-note-target (see app/static/notes.js).
+note_img <- function(href, src, alt, target, lazy = FALSE)
+  sprintf('<a href="%s"><img src="%s" alt="%s" data-note-target="%s"%s></a>',
+          href, src, esc(alt), esc(target), if (lazy) ' loading="lazy"' else "")
+
 card <- function(id) {
   o   <- office_cfg(id)
   png <- file.path(OUT, paste0(o$slug, FORMATS[["PNG"]]))
@@ -46,40 +51,55 @@ card <- function(id) {
   </div>%s
 </section>',
     id, esc(o$name), esc(o$subtitle),
-    if (have) sprintf("<a href=\"/files/%s?v=%d\"><img src=\"/files/%s?v=%d\" alt=\"%s location map\"></a>",
-                      basename(png), v, basename(png), v, esc(o$name)) else "",
+    if (have) note_img(sprintf("/view?f=%s", basename(png)), sprintf("/files/%s?v=%d", basename(png), v),
+                       paste(o$name, "location map"), basename(png)) else "",
     id, when, paste(links, collapse = ""), err)
 }
 
-PAGE <- '<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Shipwright Maps</title>
-<link rel="icon" href="/favicon.ico" sizes="48x48">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<style>
+STYLE <- '
 :root{--ink:#101820;--gold:#F2C14E;--paper:#F7F5F0;--line:#D9D4C8;--muted:#5A6570}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);position:relative;
 font:16px/1.45 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
-main{max-width:1040px;margin:0 auto;padding:32px 16px 64px}
+main{max-width:1040px;margin:0 auto;padding:32px 16px 96px}
+main.wide{max-width:none}
 h1{font-size:28px;margin:0 0 4px}h1+p{margin:0 0 32px;color:var(--muted)}
+a{color:var(--ink)}
 section{background:#fff;border:1px solid var(--line);border-radius:6px;padding:20px;margin:0 0 28px}
 h2{margin:0;font-size:20px}header p{margin:2px 0 14px;color:var(--muted)}
-img{display:block;width:100%%;height:auto;border:1px solid var(--line)}
+img{display:block;width:100%;height:auto;border:1px solid var(--line)}
 .row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;margin-top:14px}
 button{font:inherit;font-weight:600;background:var(--ink);color:#fff;border:0;border-radius:4px;padding:8px 16px;cursor:pointer}
 button:disabled{background:var(--muted);cursor:wait}
 .when{color:var(--muted);font-size:14px}.dl{display:flex;gap:14px;margin-left:auto}
-.dl a{color:var(--ink);font-weight:600;text-decoration:none;border-bottom:2px solid var(--gold)}
+.dl a{font-weight:600;text-decoration:none;border-bottom:2px solid var(--gold)}
 .err{white-space:pre-wrap;background:#FFF4F2;border:1px solid #E8B4AA;padding:12px;font-size:13px;margin:14px 0 0}
-</style></head><body><main>
-<h1>Shipwright Maps</h1>
-<p>Office location maps for project reports: PNG, SVG, PDF, or layered SVG for Illustrator. Custom sizes and new work sites are coming next.</p>
-%s
-</main></body></html>'
+figure{margin:0 0 22px}figcaption{color:var(--muted);font-size:14px;margin-top:6px}
+table.notes{width:100%;border-collapse:collapse;background:#fff;font-size:15px}
+table.notes th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line)}
+table.notes td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.notes tr:target{background:#FFF8E1}
+table.notes .meta{color:var(--muted);font-size:13px}
+table.notes select{font:inherit;padding:3px 4px}
+'
+
+shell <- function(title, intro, body, wide = FALSE)
+  paste0('<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>', esc(title), '</title>
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/static/notes.css">
+<style>', STYLE, '</style></head><body><main', if (wide) ' class="wide"' else '', '>
+<h1>', esc(title), '</h1>
+<p>', intro, '</p>
+', body, '
+</main><script src="/static/notes.js" defer></script></body></html>')
 
 #* @get /
 #* @serializer html
-function() sprintf(PAGE, paste(vapply(office_ids(), card, ""), collapse = "\n"))
+function() shell("Shipwright Maps",
+  'Office location maps for project reports: PNG, SVG, PDF, or layered SVG for Illustrator. Custom sizes and new work sites are coming next. <a href="/comps">Design comps</a>',
+  paste(vapply(office_ids(), card, ""), collapse = "\n"))
 
 #* @post /render/<id>
 function(id, res) {
@@ -112,24 +132,114 @@ function() {
       f <- grep(paste0("^", id, "-", st, "-"), files, value = TRUE)
       if (!length(f)) return("")
       v <- as.integer(file.mtime(file.path(COMPS, f[1])))
-      sprintf('<figure><a href="/comp-files/%s?v=%d"><img src="/comp-files/%s?v=%d" alt="%s, %s" loading="lazy"></a><figcaption>%s</figcaption></figure>',
-              f[1], v, f[1], v, esc(o$name), esc(COMP_STYLES[[st]]), esc(COMP_STYLES[[st]]))
+      sprintf("<figure>%s<figcaption>%s</figcaption></figure>",
+              note_img(sprintf("/view?f=%s", f[1]), sprintf("/comp-files/%s?v=%d", f[1], v),
+                       paste(o$name, COMP_STYLES[[st]], sep = ", "), f[1], lazy = TRUE),
+              esc(COMP_STYLES[[st]]))
     }, "")
     sprintf("<section><header><h2>%s</h2><p>Report full-width, 6.5 in at 300 dpi</p></header>%s</section>",
             esc(o$name), paste(figs, collapse = ""))
   }, "")
-  page <- sub("<h1>Shipwright Maps</h1>", "<h1>Map design comps</h1>", PAGE, fixed = TRUE)
-  page <- sub("<p>Office location maps[^<]*</p>",
-              "<p>Three directions on the same data, at the size they print. Click a comp for full resolution. <a href=\"/\">Back to maps</a></p>", page)
-  page <- sub("</style>", "figure{margin:0 0 22px}figcaption{color:var(--muted);font-size:14px;margin-top:6px}</style>", page, fixed = TRUE)
-  sprintf(page, paste(body, collapse = "\n"))
+  shell("Map design comps",
+        'Three directions on the same data, at the size they print. Click a comp to view it full size; press N to pin a note on it. <a href="/">Back to maps</a>',
+        paste(body, collapse = "\n"))
+}
+
+#* Full-size view of one map or comp, with its notes.
+#* @get /view
+#* @serializer html
+function(f = "", res) {
+  f <- basename(f)
+  dir <- if (file.exists(file.path(COMPS, f))) "comp-files" else if (file.exists(file.path(OUT, f))) "files" else ""
+  if (!nzchar(dir) || !grepl("\\.png$", f)) { res$status <- 404L; return("Not found") }
+  v <- as.integer(file.mtime(file.path(if (dir == "files") OUT else COMPS, f)))
+  shell(f, sprintf('Press N, click a spot, type a note. <a href="%s">Back</a> · <a href="/%s/%s?v=%d" download>Download PNG</a>',
+                   if (dir == "files") "/" else "/comps", dir, esc(f), v),
+        note_img(sprintf("/%s/%s?v=%d", dir, esc(f), v), sprintf("/%s/%s?v=%d", dir, esc(f), v), f, f),
+        wide = TRUE)
+}
+
+# ---- review notes (app/static/notes.js): pinned to an image spot, kept in data/notes.json
+NOTES <- file.path(ROOT, "data/notes.json")
+NOTE_STATUS <- c(open = "Open", decision = "Needs decision", done = "Done")
+read_notes <- function() if (file.exists(NOTES)) jsonlite::fromJSON(NOTES, simplifyDataFrame = FALSE) else list()
+write_notes <- function(n) {
+  dir.create(dirname(NOTES), showWarnings = FALSE, recursive = TRUE)
+  tmp <- paste0(NOTES, ".tmp")
+  writeLines(jsonlite::toJSON(n, auto_unbox = TRUE, pretty = TRUE), tmp)
+  file.rename(tmp, NOTES)
+}
+# JSON bodies only: a cross-site form can't send application/json without a CORS preflight.
+json_body <- function(req) {
+  if (!grepl("application/json", req$HTTP_CONTENT_TYPE %||% "", fixed = TRUE)) return(NULL)
+  tryCatch(jsonlite::fromJSON(req$postBody, simplifyVector = TRUE), error = function(e) NULL)
+}
+who <- function(req) req$HTTP_X_EXEDEV_EMAIL %||% "local"
+now <- function() format(Sys.time(), "%Y-%m-%d %H:%M UTC", tz = "UTC")
+
+#* @get /api/notes
+#* @serializer unboxedJSON
+function() read_notes()
+
+#* @post /api/notes
+#* @serializer unboxedJSON
+function(req, res) {
+  b <- json_body(req)
+  if (is.null(b) || !is.character(b$text) || !nzchar(trimws(b$text)) || !is.numeric(b$x) || !is.numeric(b$y)) {
+    res$status <- 400L; return(list(error = "Send JSON with text, x and y."))
+  }
+  n <- read_notes()
+  id <- if (length(n)) max(vapply(n, function(x) as.integer(x$id), 1L)) + 1L else 1L
+  note <- list(id = id, page = substr(b$page %||% "/", 1, 300), target = substr(b$target %||% "", 1, 200),
+               x = min(max(b$x, 0), 1), y = min(max(b$y, 0), 1), text = substr(trimws(b$text), 1, 2000),
+               who = who(req), t = now(), status = "open", resolution = "")
+  write_notes(c(n, list(note)))
+  res$status <- 201L
+  note
+}
+
+#* @post /api/notes/<id:int>
+#* @serializer unboxedJSON
+function(id, req, res) {
+  b <- json_body(req); n <- read_notes()
+  i <- which(vapply(n, function(x) as.integer(x$id) == id, TRUE))
+  if (is.null(b)) { res$status <- 400L; return(list(error = "Send JSON.")) }
+  if (!length(i)) { res$status <- 404L; return(list(error = "No such note.")) }
+  if (!is.null(b$status) && b$status %in% names(NOTE_STATUS)) n[[i]]$status <- b$status
+  if (!is.null(b$resolution)) n[[i]]$resolution <- substr(as.character(b$resolution), 1, 500)
+  n[[i]]$updated <- now(); n[[i]]$updated_by <- who(req)
+  write_notes(n)
+  n[[i]]
+}
+
+#* The review queue: every note, newest first, with status.
+#* @get /notes
+#* @serializer html
+function() {
+  n <- rev(read_notes())
+  rows <- vapply(n, function(x) {
+    opts <- paste(sprintf('<option value="%s"%s>%s</option>', names(NOTE_STATUS),
+                          ifelse(names(NOTE_STATUS) == x$status, " selected", ""), NOTE_STATUS), collapse = "")
+    where <- if (startsWith(x$target, "page:")) esc(sub("^page:", "", x$target)) else esc(x$target)
+    sprintf('<tr id="n%d"><td>%d</td><td><a href="%s">%s</a></td><td>%s%s</td><td class="meta">%s<br>%s</td><td><select data-id="%d">%s</select></td></tr>',
+            x$id, x$id, esc(x$page), where, esc(x$text),
+            if (nzchar(x$resolution %||% "")) sprintf('<div class="meta">→ %s</div>', esc(x$resolution)) else "",
+            esc(x$who), esc(x$t), x$id, opts)
+  }, "")
+  table <- if (length(n)) paste0('<table class="notes"><thead><tr><th>#</th><th>Where</th><th>Note</th><th>Who</th><th>Status</th></tr></thead><tbody>',
+                                 paste(rows, collapse = ""), "</tbody></table>",
+    "<script>document.querySelectorAll('select[data-id]').forEach(s=>s.onchange=()=>fetch('/api/notes/'+s.dataset.id,",
+    "{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s.value})}))</script>")
+    else "<p>No notes yet. Open a map or comp, press N, and click the spot you want changed.</p>"
+  open <- sum(vapply(n, function(x) x$status == "open", TRUE))
+  shell("Review notes", sprintf('%d open of %d. <a href="/">Maps</a> · <a href="/comps">Comps</a>', open, length(n)), table)
 }
 
 #* @get /healthz
 #* @serializer text
 function() "ok"
 
-# Shipwright mark from shipwright.biz, in app/static/.
+# Icons and the notes layer live in app/static/.
 static_file <- function(name) readBin(file.path(ROOT, "app/static", name), "raw",
                                       file.size(file.path(ROOT, "app/static", name)))
 
