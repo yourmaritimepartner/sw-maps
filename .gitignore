@@ -35,3 +35,6 @@ outputs/comps/
 
 # review notes (live data on the VM; see app/static/notes.js)
 data/
+
+# app renders (scripts/comp_map.R via POST /render; served at /maps-files)
+outputs/maps/
