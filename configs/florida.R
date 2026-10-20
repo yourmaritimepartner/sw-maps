@@ -6,6 +6,7 @@ office <- list(
   subtitle = "2550 Eisenhower Blvd, Fort Lauderdale · Port Everglades",
   # Ground-truthed to the center of The Amman Building footprint, OSM 1156538249.
   lon      = -80.12478748,
+  target_osm = "way/1156538249",          # footprint the pin sits in; checked by scripts/check_site.R
   lat      =  26.09162755,
   main_bbox = c(xmin = -80.185, ymin = 26.058, xmax = -80.080, ymax = 26.125),
   # inset_bbox = the bbox the coastline + OSM detail are cached for;

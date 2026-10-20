@@ -13,28 +13,48 @@ https://sw-maps.exe.xyz instead of screenshotting Google Maps.
 - Hanken Grotesk throughout (maps and app); official horizontal logo used whole.
 - Review notes (press N) with a `/notes` queue; design comps page.
 
+## Done (2026-10-20, session 2): work sites, self-serve
+
+- **/sites/new**: title + address or coordinates + scale preset (site / harbor / region) ->
+  Census geocoder -> OSM candidates ranked by address match, title match, distance ->
+  confirm page (numbered footprints, geocoder point, click to move the pin) -> extents from
+  the preset, inset OSM + coastline + labels + relief cached, `configs/<id>.R`, tool checks,
+  B · Drawing render. Steps run in the background (`scripts/new_site.R`).
+- **/locations** inventory (+ `/api/locations`): every office and site with address,
+  coordinates, scale, pinned footprint, check results, who added it; "New map from here".
+  The confirm page warns when a location already exists within 1 km.
+- Tested on a downtown pier (Pier 66, Seattle), a rural boatyard (Brooklin Boat Yard, ME)
+  and an offshore point (Block Island Wind Farm, RI; turbines drawn in the inset).
+- Coastline fixes found by the checks: closed coastline rings (islands, barrier islands)
+  were dropped; clipped multi-part lines lost all but their first part; a bbox whose
+  coastline missed its edge never split; the south-edge "must be sea" rule; empty answers
+  (open sea) were refetched on every render. Florida's Harbor Beach was painted as sea
+  (27.6 % of building area in water, now 0 %) and Florida · Main site · Half page never
+  rendered; both fixed, Florida renders changed on purpose, Hawaii pixel-identical.
+
 ## Next, in order
 
-1. **New work sites (self-serve).** A form: address or coordinates (later: click a map),
-   scale preset (site / harbor / region), title. Geocode (US Census geocoder), snap the pin
-   to the building footprint and show it for confirmation, derive `main_bbox` and the inset
-   from the preset, fetch and cache the inset OSM data, save a config, render. US-only to
-   start (TIGER). This is the biggest gap.
-2. **Local, versioned base data** on the VM (OSM extract or Overture via DuckDB) so renders
-   never depend on Overpass; stamp the data release on the figure.
-3. **True projection + provenance.** Draw in the local UTM zone instead of lat/lon; write a
+1. **Local, versioned base data** on the VM (OSM extract or Overture via DuckDB) so renders
+   never depend on Overpass; stamp the data release on the figure. Overpass was at capacity
+   for most of session 2: one site build waited 7 minutes on retries.
+2. **True projection + provenance.** Draw in the local UTM zone instead of lat/lon; write a
    sidecar JSON per render (config, style, size, data releases, git SHA, time) and a figure ID.
+3. **Labels.** Move labels that collide instead of dropping them (Florida half page clips
+   "Atlantic Ocean" at the edge; inset captions can run into buildings); road names.
 4. **Custom sizes.** Width × height input alongside the presets.
-5. **Labels.** Move labels that collide instead of dropping them; road names (H-1, Nimitz Hwy).
+5. **Sites, next steps.** Edit or remove a site from the app; app-added sites live only on
+   the VM until committed (`configs/`, `outputs/location-maps/<id>-osm.rds`).
 6. **Layered SVG** (named Illustrator layers) for the new styles, then retire `location_map.R`.
-7. **Async renders.** Renders block the single-threaded server for ~30 s; queue them.
+7. **Async renders.** Card renders still block the single-threaded server for ~30 s; site
+   builds already run in the background.
 
-## Verification still owed (by tools, not by eye)
+## Verification (by tools, not by eye)
 
-- Golden renders for both offices, pixel-diffed on every change.
-- Pin falls inside the target building footprint.
-- Building area intersecting water ≈ 0.
-- Scale bar matches a known measured length.
+- Done: golden renders for both offices, pixel-diffed (`scripts/golden.sh`).
+- Done: pin falls inside the target building footprint (`scripts/check_site.R`).
+- Done: building area intersecting water ≈ 0, ignoring the outer 2 m of each outline
+  (digitizing tolerance; raw figure reported too).
+- Owed: scale bar matches a known measured length.
 - Teammate test: someone who has never seen the code makes a report-ready figure in under
   5 minutes with no Illustrator pass.
 

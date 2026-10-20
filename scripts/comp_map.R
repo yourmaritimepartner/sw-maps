@@ -51,7 +51,20 @@ pt <- function(p) p * ts / ggplot2::.pt             # points -> ggplot text size
 lw <- function(p) p * ts / 0.75 / ggplot2::.pt      # points -> ggplot linewidth
 
 # ---- page geometry (inches) -------------------------------------------------
-hh <- if (style$title_mode == "header") 0.66 * ts else 0     # header strip above map
+sources <- "© OpenStreetMap contributors · US Census TIGER/Line 2022 · Natural Earth"
+# Header style: the meta block (coordinates, scale, sources) sits right of the title. A long
+# work-site title on a narrow frame would run into it; then stack the block under the
+# subtitle in a taller header. Measured with ragg, the device that draws it.
+text_w <- function(txt, fam, size) {
+  agg_png(tempfile(fileext = ".png"), width = 1, height = 1, units = "in", res = 72)
+  on.exit(invisible(dev.off()))
+  grid::convertWidth(grid::grobWidth(grid::textGrob(txt, gp = grid::gpar(fontfamily = fam, fontsize = size * ts))),
+                     "in", valueOnly = TRUE)
+}
+stack_meta <- style$title_mode == "header" &&
+  max(text_w(office$name, FT$title, 13), text_w(office$subtitle, FT$label, 7.6)) + 0.15 * ts +
+    text_w(sources, FT$mono, 5.3) > W
+hh <- if (style$title_mode == "header") (if (stack_meta) 1.02 else 0.66) * ts else 0     # header strip above map
 narrow <- W < 4.5                                             # half-page: two-row title block
 bh <- if (style$title_mode == "block") (if (narrow) 1.08 else 0.58) * ts else 0   # title block below map
 map_w <- W; map_h <- H - hh - bh
@@ -77,8 +90,10 @@ ilat <- function(f) bb[["ymin"]] + f * dy
 
 # ---- layers ------------------------------------------------------------------
 office_sf <- st_sf(geometry = st_sfc(st_point(c(office$lon, office$lat)), crs = 4326))
+# work sites (scripts/new_site.R) may span several counties and use OSM coastline land
 L <- main_layers(bb, state = office$tiger_state, county = office$tiger_county,
-                 year = office$tiger_year, labels = office$labels)
+                 year = office$tiger_year, labels = office$labels, counties = office$tiger_counties,
+                 land = if (!is.null(office$coast_bbox)) ocean_land(office$coast_bbox)$land)
 inset_land <- ocean_land(office$inset_bbox)$land
 if (!is.null(inset_land) && nrow(inset_land) > 0) {
   detailed <- suppressWarnings(st_crop(inset_land, st_bbox(L$land)))
@@ -138,7 +153,6 @@ for (k in c(1, 0.85, 0.72)) {
 }
 taken <- list(ivr, pin_r, inset_pl$r)
 
-sources <- "© OpenStreetMap contributors · US Census TIGER/Line 2022 · Natural Earth"
 plate_pl <- NULL
 if (style$title_mode == "plate") {
   # measure with ragg itself, the device that draws it
@@ -152,14 +166,21 @@ if (style$title_mode == "plate") {
   # placed whole and unaltered. It already says "Shipwright", so the plate titles the office.
   has_logo <- !is.null(style$logo) && file.exists(file.path(ROOT, style$logo))
   logo_img <- if (has_logo) png::readPNG(file.path(ROOT, style$logo)) else NULL
-  LOGO_W <- 1.75 * ts
-  LOGO_H <- if (has_logo) LOGO_W * nrow(logo_img) / ncol(logo_img) else 0
   plate_title <- sub("^Shipwright \u00B7 ", "", office$name)
   credit_lines <- c("\u00A9 OpenStreetMap contributors", "US Census TIGER/Line 2022 \u00B7 Natural Earth")
-  plate_w <- 0.36 * ts + max(if (has_logo) LOGO_W else 0, tw(plate_title, FT$title, 13),
-                             tw(office$subtitle, FT$label, 7), tw(credit_lines, FT$label, 5))
-  plate_h <- (0.14 + (if (has_logo) 0.22 else 0) + 0.24 + 0.17 + 0.24 + 0.14) * ts + LOGO_H
-  plate_pl <- place(plate_w / map_w, plate_h / map_h, avoid = taken, corners = c("tl", "tr", "bl", "br"))
+  # Full size first; on narrow frames (half page) where no corner is free, scale the whole
+  # plate -- logo lockup included, still whole -- down, as the inset card does.
+  for (pk in c(1, 0.85, 0.72)) {
+    ps <- ts * pk
+    LOGO_W <- 1.75 * ps
+    LOGO_H <- if (has_logo) LOGO_W * nrow(logo_img) / ncol(logo_img) else 0
+    plate_w <- 0.36 * ps + max(if (has_logo) LOGO_W else 0, tw(plate_title, FT$title, 13 * pk),
+                               tw(office$subtitle, FT$label, 7 * pk), tw(credit_lines, FT$label, 5 * pk))
+    plate_h <- (0.14 + (if (has_logo) 0.22 else 0) + 0.24 + 0.17 + 0.24 + 0.14) * ps + LOGO_H
+    plate_pl <- place(plate_w / map_w, plate_h / map_h, avoid = taken, corners = c("tl", "tr", "bl", "br"))
+    if (!is.null(plate_pl)) break
+  }
+  if (is.null(plate_pl)) stop("No free corner for the title plate at this size.")
   taken <- c(taken, list(plate_pl$r))
 }
 
@@ -185,7 +206,7 @@ fmt_dd <- function(lat, lon) sprintf("%.5f° %s · %.5f° %s",
   abs(lat), if (lat >= 0) "N" else "S", abs(lon), if (lon >= 0) "E" else "W")
 rf <- signif(ground_w_m / (map_w * 0.0254), 2)
 scale_txt <- paste0("1:", formatC(rf, format = "d", big.mark = ","))
-today <- format(Sys.Date(), "%Y-%m-%d")
+today <- Sys.getenv("SW_MAPS_DATE", format(Sys.Date(), "%Y-%m-%d"))   # pinned for golden renders
 
 halo_text <- function(df, family, face, size, colour, hjust = 0.5, vjust = 0.5)
   shadowtext::geom_shadowtext(data = df, aes(x = x, y = y, label = label),
@@ -212,7 +233,7 @@ keep <- !(fx(xy[, 1]) > ivr[1] - 0.02 & fx(xy[, 1]) < ivr[3] + 0.02 & fy(xy[, 2]
 for (q in list(inset_pl$r, plate_pl$r, sb_pl$r)) if (!is.null(q))
   keep <- keep & !(fx(xy[, 1]) > q[1] - 0.1 & fx(xy[, 1]) < q[3] + 0.1 & fy(xy[, 2]) > q[2] - 0.06 & fy(xy[, 2]) < q[4] + 0.06)
 lab <- lab[keep, ]; xy <- xy[keep, , drop = FALSE]
-is_water <- grepl("HARBOR|HARBOUR|OCEAN|WATERWAY|BAY|CHANNEL|LAGOON|RIVER|CANAL|SOUND|BASIN",
+is_water <- grepl("HARBOR|HARBOUR|OCEAN|WATERWAY|BAY|CHANNEL|LAGOON|RIVER|CANAL|SOUND|BASIN|STRAIT|COVE|INLET|NARROWS",
                   lab$name, ignore.case = TRUE)
 if (any(is_water))
   g <- g + halo_text(data.frame(x = xy[is_water, 1], y = xy[is_water, 2],
@@ -241,19 +262,23 @@ if (isTRUE(style$graticule)) {
   cr0 <- inset_pl$r                       # no ticks hidden under the inset card
   lons <- lons[!(fx(lons) > cr0[1] - 0.03 & fx(lons) < cr0[3] + 0.03 & cr0[4] > 0.9)]
   lats <- lats[!(fy(lats) > cr0[2] - 0.03 & fy(lats) < cr0[4] + 0.03 & cr0[1] < 0.1)]
+  sr0 <- sb_pl$r                          # ... nor under a scale bar + north arrow placed at the top
+  if (!is.null(sr0)) lons <- lons[!(fx(lons) > sr0[1] - 0.05 & fx(lons) < sr0[3] + 0.05 & sr0[4] > 0.9)]
   # tick labels give way to place labels near the top / left edges (widths estimated in inches)
   lab_half_in <- nchar(sub("\n.*", "", lab$name)) * 5.9 * ts * 0.62 / 72 / 2
   lons <- lons[!vapply(lons, function(l) any(abs(fx(l) - fx(xy[, 1])) * map_w < lab_half_in + 0.35 * ts &
                                               fy(xy[, 2]) > 0.85), TRUE)]
   lats <- lats[!vapply(lats, function(l) any(abs(fy(l) - fy(xy[, 2])) * map_h < 0.15 * ts &
                                               fx(xy[, 1]) * map_w < lab_half_in + 0.7 * ts), TRUE)]
-  g <- g +
+  # either axis can end up with no ticks on a narrow frame (inset card, scale bar, labels)
+  if (length(lons)) g <- g +
     annotate("segment", x = lons, xend = lons, y = bb[["ymax"]], yend = bb[["ymax"]] - tlx,
              colour = C$ink, linewidth = lw(0.5)) +
+    halo_text(data.frame(x = lons, y = bb[["ymax"]] - 1.9 * tlx,
+                         label = vapply(lons, fmt_dm, "", "E", "W")), FT$mono, "plain", 5, C$dim, vjust = 1)
+  if (length(lats)) g <- g +
     annotate("segment", x = bb[["xmin"]], xend = bb[["xmin"]] + tly, y = lats, yend = lats,
              colour = C$ink, linewidth = lw(0.5)) +
-    halo_text(data.frame(x = lons, y = bb[["ymax"]] - 1.9 * tlx,
-                         label = vapply(lons, fmt_dm, "", "E", "W")), FT$mono, "plain", 5, C$dim, vjust = 1) +
     halo_text(data.frame(x = bb[["xmin"]] + 1.6 * tly, y = lats,
                          label = vapply(lats, fmt_dm, "", "N", "S")), FT$mono, "plain", 5, C$dim, hjust = 0)
 }
@@ -299,6 +324,10 @@ inset_plot <- function() {
   if (.nz(b))  p <- p + geom_sf(data = b, fill = C$building, colour = C$building_edge, linewidth = lw(0.25))
   if (!is.null(tb)) p <- p + geom_sf(data = tb, fill = C$target_fill, colour = C$accent, linewidth = lw(0.9))
   if (.nz(pl)) p <- p + geom_sf(data = pl, colour = C$pier, linewidth = lw(0.6))
+  # offshore structures (turbines, platforms; work sites only -- the office caches have none)
+  if (.nz(harbor$structures))
+    p <- p + geom_sf(data = harbor$structures, shape = 21, size = 1.5 * ts, stroke = 0.5 * ts,
+                     fill = C$paper, colour = C$building_edge)
   p <- p + geom_sf(data = office_sf, shape = 21, size = 3 * ts, stroke = 0.7 * ts, fill = C$accent, colour = "white")
   ix <- iv[["xmax"]] - iv[["xmin"]]; iy <- iv[["ymax"]] - iv[["ymin"]]
   ig <- ix * 111320 * cos(office$lat * pi / 180); im <- nice(0.22 * ig); imd <- im / ig * ix
@@ -345,11 +374,12 @@ top <- 1
 
 if (style$title_mode == "header") {
   canvas <- canvas |>
-    lab_at("SHIPWRIGHT · OFFICE LOCATION", 0, top - iy(0.09 * ts), FT$mono, "bold", 5.6, C$faint, vjust = 1) |>
+    lab_at(paste("SHIPWRIGHT ·", office$eyebrow %||% "OFFICE LOCATION"), 0, top - iy(0.09 * ts), FT$mono, "bold", 5.6, C$faint, vjust = 1) |>
     lab_at(office$name, 0, top - iy(0.25 * ts), FT$title, "bold", 13, C$ink, vjust = 1) |>
     lab_at(office$subtitle, 0, top - iy(0.48 * ts), FT$label, "plain", 7.6, C$dim, vjust = 1) |>
     lab_at(paste(fmt_dd(office$lat, office$lon), paste(scale_txt, "at this size ·", today), sources, sep = "\n"),
-           1, top - iy(0.25 * ts), FT$mono, "plain", 5.3, C$dim, hjust = 1, vjust = 1, lh = 1.35)
+           if (stack_meta) 0 else 1, top - iy((if (stack_meta) 0.66 else 0.25) * ts), FT$mono, "plain", 5.3, C$dim,
+           hjust = if (stack_meta) 0 else 1, vjust = 1, lh = 1.35)
   canvas <- canvas + annotate("rect", xmin = 0, xmax = 1, ymin = map_y0, ymax = map_y0 + map_hf,
                               fill = NA, colour = C$rule, linewidth = lw(0.8))
 }
@@ -395,17 +425,17 @@ if (style$title_mode == "block") {
 if (style$title_mode == "plate" && !is.null(plate_pl)) {
   pr <- plate_pl$r; p <- c(cx(pr[1]), cy(pr[2]), cx(pr[3]), cy(pr[4]))
   canvas <- canvas + annotate("rect", xmin = p[1], xmax = p[3], ymin = p[2], ymax = p[4], fill = C$paper, colour = NA)
-  px <- p[1] + ix(0.18 * ts); y <- p[4] - iy(0.14 * ts)
+  px <- p[1] + ix(0.18 * ps); y <- p[4] - iy(0.14 * ps)
   if (has_logo) {
     canvas <- canvas + draw_grob(grid::rasterGrob(logo_img), px, y - iy(LOGO_H), ix(LOGO_W), iy(LOGO_H))
-    y <- y - iy(LOGO_H + 0.11 * ts)
-    canvas <- canvas + draw_line(x = c(px, p[3] - ix(0.18 * ts)), y = c(y, y), colour = C$rule, linewidth = lw(0.5))
-    y <- y - iy(0.11 * ts)
+    y <- y - iy(LOGO_H + 0.11 * ps)
+    canvas <- canvas + draw_line(x = c(px, p[3] - ix(0.18 * ps)), y = c(y, y), colour = C$rule, linewidth = lw(0.5))
+    y <- y - iy(0.11 * ps)
   }
   canvas <- canvas |>
-    lab_at(plate_title, px, y, FT$title, "bold", 13, C$ink, vjust = 1) |>
-    lab_at(office$subtitle, px, y - iy(0.25 * ts), FT$label, "plain", 7, C$dim, vjust = 1) |>
-    lab_at(paste(credit_lines, collapse = "\n"), px, p[2] + iy(0.14 * ts), FT$label, "plain", 5, C$faint, vjust = 0, lh = 1.3)
+    lab_at(plate_title, px, y, FT$title, "bold", 13 * pk, C$ink, vjust = 1) |>
+    lab_at(office$subtitle, px, y - iy(0.25 * ps), FT$label, "plain", 7 * pk, C$dim, vjust = 1) |>
+    lab_at(paste(credit_lines, collapse = "\n"), px, p[2] + iy(0.14 * ps), FT$label, "plain", 5 * pk, C$faint, vjust = 0, lh = 1.3)
 }
 
 # ---- write: PNG (300 dpi), plus vector PDF and SVG with live Hanken text -----------

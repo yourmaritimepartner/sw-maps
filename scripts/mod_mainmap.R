@@ -78,21 +78,30 @@ MAIN_BBOX <- c(xmin = -157.98, ymin = 21.24, xmax = -157.79, ymax = 21.40)
 
 ## ---- layer builder -----------------------------------------------------------
 # Returns named list of sf objects clipped to bbox4326. TIGER + rnaturalearth only.
+# counties: optional 5-digit county GEOIDs (work sites whose map spans several counties or
+#   states); replaces state/county for water and roads. land: optional land polygons (OSM
+#   coastline land from mod_oceanfill) used instead of Natural Earth, which is too coarse
+#   for site- and harbor-scale maps. Both NULL for the offices.
 main_layers <- function(bbox4326 = MAIN_BBOX,
                         state = "Hawaii", county = "Honolulu", year = 2022,
-                        labels = NULL) {
+                        labels = NULL, counties = NULL, land = NULL) {
   bb <- bbox4326
   if (is.null(names(bb))) names(bb) <- c("xmin", "ymin", "xmax", "ymax")
   bpoly   <- .as_bpoly(bb)
   bbox_nm <- sf::st_bbox(bpoly)
 
   ## --- water: TIGER county area_water (harbors, channels, canals, ocean) ---
-  aw    <- sf::st_transform(tigris::area_water(state, county, year = year), 4326)
+  aw <- if (length(counties)) {
+    do.call(rbind, lapply(counties, function(g) sf::st_transform(
+      tigris::area_water(substr(g, 1, 2), substr(g, 3, 5), year = year)[, c("HYDROID", "FULLNAME")], 4326)))
+  } else sf::st_transform(tigris::area_water(state, county, year = year), 4326)
   water <- .safe_crop(aw, bbox_nm)
 
   ## --- land: rnaturalearth island body (clean ocean, no offshore county-limit
   ##     gaps) carved by the TIGER water polygons so lochs/harbor read crisply ---
-  neL    <- sf::st_transform(
+  neL    <- if (!is.null(land) && length(sf::st_geometry(land)) > 0) {
+    sf::st_sf(geometry = sf::st_geometry(sf::st_transform(land, 4326)))
+  } else sf::st_transform(
     rnaturalearth::ne_download(scale = 10, type = "land",
                                category = "physical", returnclass = "sf"),
     4326)
@@ -117,7 +126,10 @@ main_layers <- function(bbox4326 = MAIN_BBOX,
   }, error = function(e) NULL)
 
   ## --- major roads: TIGER primary/secondary roads for the requested state ---
-  psr <- sf::st_transform(tigris::primary_secondary_roads(state, year = year), 4326)
+  psr <- if (length(counties)) {
+    do.call(rbind, lapply(unique(substr(counties, 1, 2)), function(s) sf::st_transform(
+      tigris::primary_secondary_roads(s, year = year)[, c("LINEARID", "FULLNAME", "RTTYP", "MTFCC")], 4326)))
+  } else sf::st_transform(tigris::primary_secondary_roads(state, year = year), 4326)
   major_roads <- .safe_crop(psr, bbox_nm)
   freeways <- if (.nrow0(major_roads) > 0)
     major_roads[!is.na(major_roads$RTTYP) & major_roads$RTTYP == "I", ] else major_roads

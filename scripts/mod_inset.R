@@ -72,7 +72,11 @@ inset_office_building <- function(buildings_sf, office_sf) {
   pt <- st_geometry(st_transform(office_sf, 4326))[1]
   inside <- which(lengths(st_intersects(buildings_sf, pt)) > 0)
   if (length(inside)) return(buildings_sf[inside[1], ])
-  d <- as.numeric(st_distance(buildings_sf, pt))   # metres (geographic -> great-circle)
+  # metres, measured in a local azimuthal projection (lon/lat distances with s2 off need
+  # lwgeom, which the VM does not have)
+  xy <- st_coordinates(pt)[1, ]
+  aeqd <- sprintf("+proj=aeqd +lat_0=%.6f +lon_0=%.6f +datum=WGS84 +units=m +no_defs", xy[2], xy[1])
+  d <- as.numeric(st_distance(st_transform(buildings_sf, aeqd), st_transform(pt, aeqd)))
   i <- which.min(d)
   if (length(i) && d[i] <= 40) return(buildings_sf[i, ])
   NULL

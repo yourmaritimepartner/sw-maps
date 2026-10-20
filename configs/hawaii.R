@@ -6,6 +6,7 @@ office <- list(
   subtitle = "501A N Nimitz Hwy, Honolulu · Honolulu Harbor",
   # NE ("upper-right") corner of the large shed, OSM building 113186868.
   lon      = -157.86855,
+  target_osm = "way/113186868",          # footprint the pin sits in; checked by scripts/check_site.R
   lat      =  21.31176,
   main_bbox  = c(xmin = -157.98, ymin = 21.24, xmax = -157.79, ymax = 21.40),
   # inset_bbox = the bbox the coastline + OSM detail are cached for;

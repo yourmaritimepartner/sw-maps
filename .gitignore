@@ -38,3 +38,6 @@ data/
 
 # app renders (scripts/comp_map.R via POST /render; served at /maps-files)
 outputs/maps/
+
+# golden render sets for pixel diffs (scripts/golden.sh)
+outputs/golden/

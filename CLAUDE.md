@@ -24,6 +24,10 @@ Read README.md (architecture, deploy) and ROADMAP.md (what's next) first.
   `curl -H 'Content-Type: application/json' -d '{"status":"done","resolution":"<sha>"}' localhost:8000/api/notes/<id>`
   on the VM. "Work the notes" = fix open notes in a batch, re-render, mark done.
 - Look at every render you change (download the PNG and view it); don't trust "Wrote …".
+  `scripts/contact_sheet.sh <id>` renders all nine style × size and tiles them on one sheet.
+- Before a renderer change: `scripts/golden.sh render before`; after: `render after` +
+  `diff before after` (office renders must be pixel-identical unless changed on purpose).
+- `Rscript scripts/check_site.R <id>` proves a location (pin in footprint, buildings in water).
 
 ## Rules from the owner
 
@@ -36,6 +40,12 @@ Read README.md (architecture, deploy) and ROADMAP.md (what's next) first.
 - Confirm before outward-facing actions on other VMs (sw-dashboard is shared production).
 
 ## Gotchas
+
+- Long jobs on the VM: `nohup … < /dev/null &` and poll; ssh sessions reset after a few silent
+  minutes. Never `pgrep -f`/`pkill -f` a pattern that appears in your own ssh command line
+  (it matches and kills the session); select with `ps -C R` instead.
+- Test app changes on a second instance (`PORT=8001 Rscript app/serve.R`, tunnel
+  `ssh -L 18001:localhost:8001`) before restarting the service.
 
 - When writing R through the Write tool, `\uXXXX` escapes become literal characters; patch
   scripts must match the literal glyphs.

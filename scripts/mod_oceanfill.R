@@ -36,6 +36,7 @@ suppressPackageStartupMessages({
 # ---- Overpass fetch (retry + endpoint failover), copied pattern from proof.R ----
 .oceanfill_endpoints <- c(
   "https://overpass-api.de/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter"
 )
 
@@ -59,6 +60,7 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
   cache_file <- file.path(cache_dir, paste0("coastline-", key, ".rds"))
   if (disk_cache && file.exists(cache_file)) {
     ln <- readRDS(cache_file)
+    if (!length(ln)) return(NULL)            # cached "no coastline in this bbox"
     .oceanfill_cache[[key]] <- ln
     return(ln)
   }
@@ -73,8 +75,11 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
     '[out:xml][timeout:90];way["natural"="coastline"](%.6f,%.6f,%.6f,%.6f);(._;>;);out body;',
     bb["ymin"], bb["xmin"], bb["ymax"], bb["xmax"])
   ua <- "sw-maps-oceanfill/1.0 (Shipwright location map; contact j@djinna.com)"
-  osm_status_ok <- function(f) file.exists(f) && file.info(f)$size > 500 &&
-    any(grepl("<osm", readLines(f, n = 5, warn = FALSE)))
+  # a valid answer can be tiny: open sea has no coastline at all (offshore sites). Reject only
+  # non-OSM bodies and partial answers (Overpass reports a timeout as a <remark>).
+  osm_status_ok <- function(f) file.exists(f) && file.info(f)$size > 50 &&
+    any(grepl("<osm", readLines(f, n = 5, warn = FALSE))) &&
+    !any(grepl("<remark>", readLines(f, warn = FALSE)))
 
   tmpf <- tempfile(fileext = ".osm")
   res <- NULL
@@ -98,19 +103,34 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
   if (!is.null(tmpf) && file.exists(tmpf)) unlink(tmpf)
   if (is.null(res)) return(NULL)
 
-  lns <- res$osm_lines
-  if (is.null(lns) || nrow(lns) == 0) {
-    .oceanfill_cache[[key]] <- NULL
+  ln <- .of_coast_from_osm(res)
+  if (is.null(ln)) {
+    # no coastline here: remember that on disk too, so renders stay offline (an empty sfc;
+    # ocean_land() then falls back to Natural Earth, which says land or sea)
+    if (disk_cache) tryCatch({ dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+                                saveRDS(sf::st_sfc(crs = 4326), cache_file) }, error = function(e) NULL)
     return(NULL)
   }
-  ln <- sf::st_geometry(lns)
-  ln <- sf::st_cast(ln, "LINESTRING", warn = FALSE)
   .oceanfill_cache[[key]] <- ln
   if (disk_cache) {
     dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
     tryCatch(saveRDS(ln, cache_file), error = function(e) NULL)
   }
   ln
+}
+
+# natural=coastline ways from an osmdata_sf object as LINESTRINGs in OSM node order.
+# Closed ways -- islands, and long barrier-island rings such as Fort Lauderdale beach --
+# come back from osmdata as POLYGONS, not lines; reading only osm_lines dropped them all
+# (Harbor Beach was painted as sea). osmdata keeps the node order, so land stays on the left.
+.of_coast_from_osm <- function(o) {
+  pick <- function(x) {
+    if (is.null(x) || !inherits(x, "sf") || !nrow(x)) return(NULL)
+    if ("natural" %in% names(x)) x <- x[!is.na(x$natural) & x$natural == "coastline", ]
+    if (nrow(x)) sf::st_cast(sf::st_geometry(x), "LINESTRING", warn = FALSE) else NULL
+  }
+  parts <- Filter(Negate(is.null), list(pick(o$osm_lines), pick(o$osm_polygons)))
+  if (!length(parts)) NULL else do.call(c, parts)
 }
 
 # ---- geometry helpers ----
@@ -166,35 +186,52 @@ of_get_coastline <- function(bbox4326, tries = 6, disk_cache = TRUE) {
   coast <- suppressWarnings(sf::st_intersection(coast_lines, bbp))
   coast <- coast[!sf::st_is_empty(coast)]
   if (length(coast) == 0) return(NULL)
-  coast <- suppressWarnings(sf::st_cast(coast, "LINESTRING", warn = FALSE))
+  # via MULTILINESTRING: on a mixed set, a direct cast keeps only the FIRST part of each
+  # multi-part line, and clipping a ring that leaves and re-enters the bbox makes several
+  coast <- suppressWarnings(sf::st_cast(sf::st_cast(coast, "MULTILINESTRING"), "LINESTRING"))
 
   # node coastline together with the bbox boundary, then polygonize into faces
   boundary <- sf::st_cast(bbp, "LINESTRING")
-  blade <- sf::st_union(c(coast, boundary))
-  faces <- sf::st_collection_extract(sf::st_polygonize(blade), "POLYGON")
-  faces <- suppressWarnings(sf::st_cast(faces, "POLYGON", warn = FALSE))
+  polyfaces <- function(blade) {
+    f <- sf::st_collection_extract(sf::st_polygonize(blade), "POLYGON")
+    suppressWarnings(sf::st_cast(f, "POLYGON", warn = FALSE))
+  }
+  faces <- polyfaces(sf::st_union(c(coast, boundary)))
   if (length(faces) == 0) return(NULL)
 
   # classify each face via left(land)/right(sea) probe containment
   pr <- .of_probes(coast)
-  land_hits <- if (length(pr$left))  lengths(sf::st_intersects(faces, pr$left))  else rep(0, length(faces))
-  sea_hits  <- if (length(pr$right)) lengths(sf::st_intersects(faces, pr$right)) else rep(0, length(faces))
+  hits <- function(faces) list(
+    land = if (length(pr$left))  lengths(sf::st_intersects(faces, pr$left))  else rep(0, length(faces)),
+    sea  = if (length(pr$right)) lengths(sf::st_intersects(faces, pr$right)) else rep(0, length(faces)))
+  h <- hits(faces)
+  # A face holding plenty of BOTH land and sea probes means the coastline never split the
+  # bbox: a clipped line's endpoint sits only approximately on the boundary and missed it
+  # (Seattle's waterfront). Then node the UNCLIPPED ways against the boundary so GEOS
+  # computes the crossings itself, and keep the faces inside the bbox. Only on failure, so
+  # maps whose split already worked (the offices) are untouched.
+  mixed <- pmin(h$land, h$sea) >= 3 & pmin(h$land, h$sea) >= 0.2 * pmax(h$land, h$sea)
+  if (any(mixed)) {
+    full <- coast_lines[lengths(sf::st_intersects(coast_lines, bbp)) > 0]
+    f2 <- polyfaces(sf::st_union(c(suppressWarnings(sf::st_cast(full, "LINESTRING", warn = FALSE)), boundary)))
+    if (length(f2)) f2 <- f2[lengths(sf::st_within(suppressWarnings(sf::st_point_on_surface(f2)), bbp)) > 0]
+    if (length(f2)) { faces <- f2; h <- hits(faces) }
+  }
+  land_hits <- h$land; sea_hits <- h$sea
   is_land <- land_hits > sea_hits
-  # faces with no probe signal at all: leave as ocean (safer to over-paint water
-  # than to leave a hole) unless flipped below.
 
-  # sanity check: the face containing the south-edge midpoint MUST be ocean.
-  south_mid <- sf::st_sfc(sf::st_point(c((bbox4326[1] + bbox4326[3]) / 2, bbox4326[2])),
-                          crs = 4326)
-  # nudge slightly inside the bbox
-  south_mid <- sf::st_sfc(sf::st_point(c((bbox4326[1] + bbox4326[3]) / 2,
-                                         bbox4326[2] + (bbox4326[4] - bbox4326[2]) * 0.01)),
-                          crs = 4326)
-  sidx <- which(lengths(sf::st_intersects(faces, south_mid)) > 0)
-  if (length(sidx) && any(is_land[sidx])) {
-    # coastline digitised opposite to convention here -> invert
-    is_land <- (sea_hits > land_hits)
-    if (length(sidx) && any(is_land[sidx])) is_land[sidx] <- FALSE
+  # OSM coastlines are validated to keep land on the left, so the probes decide. (This
+  # used to force the face at the bbox's south-edge midpoint to be sea and invert the
+  # whole labelling otherwise, which is wrong wherever the sea lies north or west of a
+  # site: Seattle, Maine, any north shore.) Faces where the probes tie -- typically
+  # no probe landed in them -- are settled by Natural Earth land at a point inside.
+  tie <- which(land_hits == sea_hits)
+  if (length(tie)) {
+    ne <- tryCatch(.of_from_ne(bbox4326)$land, error = function(e) NULL)
+    for (i in tie) {
+      p <- suppressWarnings(sf::st_point_on_surface(faces[i]))
+      is_land[i] <- !is.null(ne) && lengths(sf::st_intersects(p, ne))[1] > 0
+    }
   }
 
   land <- if (any(is_land)) sf::st_union(faces[is_land]) else NULL
