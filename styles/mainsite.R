@@ -1,10 +1,10 @@
-# Comp C — MAIN SITE. Bridges to shipwright.biz for proposals and collateral: Caslon
-# masthead (Libre Caslon stands in for the site's Adobe Caslon), the whole logo lockup,
-# fuller sea and relief, italic serif water names. Full-bleed map with a title plate.
+# Style C — MAIN SITE. Bridges to shipwright.biz for proposals and collateral: a white
+# title plate carrying the whole horizontal logo lockup, fuller sea and relief, italic
+# water names. Full-bleed map.
 style <- list(
   id = "mainsite", label = "C · Main site",
-  title_mode = "plate",             # white plate on the map: logo + serif title
-  fonts = list(title = "SW Serif", label = "SW Sans", water = "SW Serif", mono = "SW Mono"),
+  title_mode = "plate",             # white plate on the map: logo lockup + office title
+  fonts = list(title = "Hanken Grotesk", label = "Hanken Grotesk", water = "Hanken Grotesk", mono = "Hanken Grotesk"),
   col = list(
     paper = "#FFFFFF", ink = "#1A2733", dim = "#526071", faint = "#8A96A3", rule = "#D9D9D4",
     land = "#EFE9DC", water = "#A9C9DD", coast = "#7FA6BD",
@@ -16,5 +16,5 @@ style <- list(
   terrain = list(on = TRUE, alpha = 0.34, shadow = "#4A4438", light = "#FFFCF5"),
   graticule = FALSE,
   water_italic = TRUE,
-  logo = "app/static/shipwright-logo-vertical.png"   # official vertical lockup, always used whole
+  logo = "app/static/logo/shipwright-logo-horizontal.png"   # official horizontal lockup, always used whole
 )

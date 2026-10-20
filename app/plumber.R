@@ -1,13 +1,20 @@
-# sw-maps web front: list offices, re-render on demand, serve the outputs.
-# Started by app/serve.R; rendering shells out to scripts/location_map.R so each
-# render gets a clean R session (the modules define globals).
+# sw-maps web front: office maps in three styles and three sizes, rendered on demand,
+# plus design comps and review notes. Started by app/serve.R; rendering shells out to
+# scripts/comp_map.R so each render gets a clean R session (the modules define globals).
 
 ROOT    <- Sys.getenv("SW_MAPS_ROOT", path.expand("~/sw-projects/sw-maps"))
 CONFIGS <- file.path(ROOT, "configs")
-OUT     <- file.path(ROOT, "outputs/location-maps")
+OUT     <- file.path(ROOT, "outputs/location-maps")   # legacy location_map.R renders
+MAPS    <- file.path(ROOT, "outputs/maps")            # comp_map.R renders served by the app
 
-FORMATS <- c(PNG = "-location-map.png", SVG = "-location-map.svg",
-             PDF = "-location-map.pdf", "Layered SVG" = "-location-map-layered.svg")
+STYLES <- c(drawing  = "B · Drawing",                 # first = default
+            platform = "A · Platform",
+            mainsite = "C · Main site")
+SIZES  <- c(report = "Report · 6.5 × 4.6 in",
+            half   = "Half page · 3.15 × 3.6 in",
+            slide  = "Slide · 16:9")
+FORMATS <- c(PNG = "png", PDF = "pdf", SVG = "svg")
+pick <- function(x, choices) if (!is.null(x) && x %in% names(choices)) x else names(choices)[1]
 
 office_ids <- function() sub("\\.R$", "", list.files(CONFIGS, "\\.R$"))
 office_cfg <- function(id) {
@@ -26,40 +33,56 @@ note_img <- function(href, src, alt, target, lazy = FALSE)
   sprintf('<a href="%s"><img src="%s" alt="%s" data-note-target="%s"%s></a>',
           href, src, esc(alt), esc(target), if (lazy) ' loading="lazy"' else "")
 
-card <- function(id) {
-  o   <- office_cfg(id)
-  png <- file.path(OUT, paste0(o$slug, FORMATS[["PNG"]]))
+card <- function(id, style, size) {
+  o    <- office_cfg(id)
+  stem <- sprintf("%s-%s-%s", id, style, size)
+  png  <- file.path(MAPS, paste0(stem, ".png"))
   have <- file.exists(png)
-  v   <- if (have) as.integer(file.mtime(png)) else 0L
-  when <- if (have) format(file.mtime(png), "%Y-%m-%d %H:%M UTC", tz = "UTC") else "never"
+  v    <- if (have) as.integer(file.mtime(png)) else 0L
+  when <- if (have) format(file.mtime(png), "Rendered %Y-%m-%d %H:%M UTC", tz = "UTC") else "Not rendered yet"
   links <- vapply(names(FORMATS), function(f) {
-    fn <- paste0(o$slug, FORMATS[[f]])
-    if (file.exists(file.path(OUT, fn)))
-      sprintf("<a href=\"/files/%s?v=%d\" download>%s</a>", fn, v, f) else ""
+    fn <- paste0(stem, ".", FORMATS[[f]])
+    if (file.exists(file.path(MAPS, fn))) sprintf('<a href="/maps-files/%s?v=%d" download>%s</a>', fn, v, f) else ""
   }, "")
-  err <- if (!is.null(last_error[[id]]))
-    sprintf("<pre class=\"err\">%s</pre>", esc(last_error[[id]])) else ""
+  err <- if (!is.null(last_error[[stem]])) sprintf('<pre class="err">%s</pre>', esc(last_error[[stem]])) else ""
   sprintf(
 '<section id="%s">
   <header><h2>%s</h2><p>%s</p></header>
   %s
   <div class="row">
-    <form method="post" action="/render/%s" onsubmit="this.querySelector(\'button\').disabled=true;this.querySelector(\'button\').textContent=\'Rendering…\'">
-      <button>Re-render</button></form>
-    <span class="when">Last rendered %s</span>
+    <form method="post" action="/render/%s?style=%s&amp;size=%s" onsubmit="this.querySelector(\'button\').disabled=true;this.querySelector(\'button\').textContent=\'Rendering… about 30 s\'">
+      <button>%s</button></form>
+    <span class="when">%s</span>
     <span class="dl">%s</span>
   </div>%s
 </section>',
     id, esc(o$name), esc(o$subtitle),
-    if (have) note_img(sprintf("/view?f=%s", basename(png)), sprintf("/files/%s?v=%d", basename(png), v),
-                       paste(o$name, "location map"), basename(png)) else "",
-    id, when, paste(links, collapse = ""), err)
+    if (have) note_img(sprintf("/view?f=%s.png", stem), sprintf("/maps-files/%s.png?v=%d", stem, v),
+                       paste(o$name, STYLES[[style]], SIZES[[size]], sep = ", "), paste0(stem, ".png"))
+    else '<div class="empty">No render for this style and size yet. Render it below.</div>',
+    id, style, size, if (have) "Re-render" else "Render", when, paste(links, collapse = ""), err)
+}
+
+switcher <- function(label, param, choices, current, other) {
+  items <- vapply(names(choices), function(k) {
+    q <- if (param == "style") sprintf("?style=%s&amp;size=%s", k, other) else sprintf("?style=%s&amp;size=%s", other, k)
+    sprintf('<a href="/%s"%s>%s</a>', q, if (k == current) ' aria-current="true"' else "", esc(choices[[k]]))
+  }, "")
+  sprintf('<div class="switch"><span>%s</span>%s</div>', label, paste(items, collapse = ""))
 }
 
 STYLE <- '
-:root{--ink:#101820;--gold:#F2C14E;--paper:#F7F5F0;--line:#D9D4C8;--muted:#5A6570}
+@font-face{font-family:"Hanken Grotesk";font-style:normal;font-weight:400 800;font-display:swap;
+src:url("/static/fonts/hanken-grotesk-var-latin.woff2") format("woff2")}
+:root{--ink:#101820;--gold:#F2C14E;--paper:#F7F5F0;--line:#D9D4C8;--muted:#5A6570;--accent:#015686}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);position:relative;
-font:16px/1.45 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+font:16px/1.45 "Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+.switches{display:flex;flex-wrap:wrap;gap:10px 28px;margin:-12px 0 28px}
+.switch{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.switch span{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:4px}
+.switch a{padding:5px 12px;border:1px solid var(--line);border-radius:4px;background:#fff;text-decoration:none;font-size:15px}
+.switch a[aria-current]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.empty{padding:48px 16px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:4px}
 main{max-width:1040px;margin:0 auto;padding:32px 16px 96px}
 main.wide{max-width:none}
 h1{font-size:28px;margin:0 0 4px}h1+p{margin:0 0 32px;color:var(--muted)}
@@ -97,28 +120,35 @@ shell <- function(title, intro, body, wide = FALSE)
 
 #* @get /
 #* @serializer html
-function() shell("Shipwright Maps",
-  'Office location maps for project reports: PNG, SVG, PDF, or layered SVG for Illustrator. Custom sizes and new work sites are coming next. <a href="/comps">Design comps</a>',
-  paste(vapply(office_ids(), card, ""), collapse = "\n"))
+function(style = NULL, size = NULL) {
+  style <- pick(style, STYLES); size <- pick(size, SIZES)
+  shell("Shipwright Maps",
+    'Office location maps for project reports. Pick a style and size, then download PNG, PDF or SVG. Press N to pin a note. <a href="/comps">Design comps</a> · <a href="/notes">Notes</a>',
+    paste0('<div class="switches">', switcher("Style", "style", STYLES, style, size),
+           switcher("Size", "size", SIZES, size, style), "</div>",
+           paste(vapply(office_ids(), card, "", style = style, size = size), collapse = "\n")))
+}
 
 #* @post /render/<id>
-function(id, res) {
+function(id, style = NULL, size = NULL, res) {
   if (!id %in% office_ids()) { res$status <- 404L; res$body <- "Unknown office"; return(res) }
-  log <- suppressWarnings(system2("Rscript", c(file.path(ROOT, "scripts/location_map.R"), id),
+  style <- pick(style, STYLES); size <- pick(size, SIZES)
+  stem <- sprintf("%s-%s-%s", id, style, size)
+  log <- suppressWarnings(system2("Rscript", c(file.path(ROOT, "scripts/comp_map.R"), id, style, size, "outputs/maps"),
                                   stdout = TRUE, stderr = TRUE))
   status <- attr(log, "status")
-  if (!is.null(status) && status != 0) last_error[[id]] <- paste(tail(log, 25), collapse = "\n")
-  else if (exists(id, envir = last_error, inherits = FALSE)) rm(list = id, envir = last_error)
+  if (!is.null(status) && status != 0) last_error[[stem]] <- paste(tail(log, 25), collapse = "\n")
+  else if (exists(stem, envir = last_error, inherits = FALSE)) rm(list = stem, envir = last_error)
   res$status <- 303L
-  res$setHeader("Location", paste0("/#", id))
+  res$setHeader("Location", sprintf("/?style=%s&size=%s#%s", style, size, id))
   res$body <- ""
   res
 }
 
 COMPS <- file.path(ROOT, "outputs/comps")
-COMP_STYLES <- c(platform = "A · Platform — BD apps design language, header above the map",
-                 drawing  = "B · Drawing — quiet grey base, neatline ticks, title block",
-                 mainsite = "C · Main site — shipwright.biz Caslon, logo, full-bleed relief")
+COMP_STYLES <- c(platform = "A · Platform — BD apps palette, header above the map",
+                 drawing  = "B · Drawing — quiet grey base, neatline ticks, title block (app default)",
+                 mainsite = "C · Main site — horizontal logo plate, fuller sea and relief")
 
 #* Design comps (scripts/comp_map.R), grouped by office.
 #* @get /comps
@@ -150,11 +180,12 @@ function() {
 #* @serializer html
 function(f = "", res) {
   f <- basename(f)
-  dir <- if (file.exists(file.path(COMPS, f))) "comp-files" else if (file.exists(file.path(OUT, f))) "files" else ""
-  if (!nzchar(dir) || !grepl("\\.png$", f)) { res$status <- 404L; return("Not found") }
-  v <- as.integer(file.mtime(file.path(if (dir == "files") OUT else COMPS, f)))
+  roots <- c("maps-files" = MAPS, "comp-files" = COMPS, files = OUT)
+  dir <- names(roots)[file.exists(file.path(roots, f))][1]
+  if (is.na(dir) || !grepl("\\.png$", f)) { res$status <- 404L; return("Not found") }
+  v <- as.integer(file.mtime(file.path(roots[[dir]], f)))
   shell(f, sprintf('Press N, click a spot, type a note. <a href="%s">Back</a> · <a href="/%s/%s?v=%d" download>Download PNG</a>',
-                   if (dir == "files") "/" else "/comps", dir, esc(f), v),
+                   if (dir == "comp-files") "/comps" else "/", dir, esc(f), v),
         note_img(sprintf("/%s/%s?v=%d", dir, esc(f), v), sprintf("/%s/%s?v=%d", dir, esc(f), v), f, f),
         wide = TRUE)
 }

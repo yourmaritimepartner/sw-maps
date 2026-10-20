@@ -1,12 +1,13 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# Design comps: one office x one style x one size, laid out at TRUE PRINT SIZE so
+# Styled map figure: one office x one style x one size, laid out at TRUE PRINT SIZE so
 # type and strokes are specified in real points. Data layers come from the same
 # modules as location_map.R; the composition is new: fit-to-size extent, automatic
 # inset placement (corner covering the least land), extent box + connectors,
 # km / nmi scale bar, north arrow, label classes with halos.
-#   Rscript scripts/comp_map.R hawaii platform report
-# Styles live in styles/<id>.R (each defines `style`). Output: outputs/comps/.
+#   Rscript scripts/comp_map.R hawaii drawing report [outputs/maps]
+# Styles live in styles/<id>.R (each defines `style`). Writes <office>-<style>-<size>
+# .png/.pdf/.svg to the output folder (default outputs/comps; the web app uses outputs/maps).
 # =============================================================================
 suppressPackageStartupMessages({
   library(sf); library(ggplot2); library(cowplot); library(ragg); library(shadowtext)
@@ -18,6 +19,7 @@ args <- commandArgs(trailingOnly = TRUE)
 office_id <- if (length(args) >= 1) args[[1]] else "hawaii"
 style_id  <- if (length(args) >= 2) args[[2]] else "platform"
 size_id   <- if (length(args) >= 3) args[[3]] else "report"
+out_sub   <- if (length(args) >= 4) args[[4]] else "outputs/comps"
 
 SIZES <- list(                       # final printed size, inches
   report = c(w = 6.5,    h = 4.6),   # full-width report figure
@@ -26,17 +28,14 @@ SIZES <- list(                       # final printed size, inches
 )
 DPI <- 300
 
-# ---- fonts (OFL, committed in fonts/) ---------------------------------------
+# ---- fonts: Hanken Grotesk throughout (OFL, static instances in fonts/) ---------
+# On the VM fonts/ is on fontconfig's path (~/.config/fontconfig/fonts.conf), so the PNG,
+# PDF and SVG devices all resolve it by name. Elsewhere, register it for ragg at least.
 FD <- file.path(ROOT, "fonts")
-systemfonts::register_font("SW Sans",
-  file.path(FD, "HankenGrotesk-Regular.ttf"), file.path(FD, "HankenGrotesk-SemiBold.ttf"),
-  file.path(FD, "HankenGrotesk-Italic.ttf"),  file.path(FD, "HankenGrotesk-SemiBoldItalic.ttf"))
-systemfonts::register_font("SW Mono",
-  file.path(FD, "IBMPlexMono-Regular.ttf"), file.path(FD, "IBMPlexMono-Medium.ttf"),
-  file.path(FD, "IBMPlexMono-Regular.ttf"), file.path(FD, "IBMPlexMono-Medium.ttf"))
-systemfonts::register_font("SW Serif",
-  file.path(FD, "LibreCaslonText-Regular.ttf"), file.path(FD, "LibreCaslonText-Bold.ttf"),
-  file.path(FD, "LibreCaslonText-Italic.ttf"),  file.path(FD, "LibreCaslonText-Bold.ttf"))
+if (!"Hanken Grotesk" %in% systemfonts::system_fonts()$family)
+  systemfonts::register_font("Hanken Grotesk",
+    file.path(FD, "HankenGrotesk-Regular.ttf"), file.path(FD, "HankenGrotesk-Bold.ttf"),
+    file.path(FD, "HankenGrotesk-Italic.ttf"),  file.path(FD, "HankenGrotesk-SemiBoldItalic.ttf"))
 
 # ---- config, style, data modules --------------------------------------------
 source(file.path(ROOT, "configs", paste0(office_id, ".R")))     # -> office
@@ -53,7 +52,8 @@ lw <- function(p) p * ts / 0.75 / ggplot2::.pt      # points -> ggplot linewidth
 
 # ---- page geometry (inches) -------------------------------------------------
 hh <- if (style$title_mode == "header") 0.66 * ts else 0     # header strip above map
-bh <- if (style$title_mode == "block")  0.58 * ts else 0     # title block below map
+narrow <- W < 4.5                                             # half-page: two-row title block
+bh <- if (style$title_mode == "block") (if (narrow) 1.08 else 0.58) * ts else 0   # title block below map
 map_w <- W; map_h <- H - hh - bh
 map_y0 <- bh / H; map_hf <- map_h / H                        # map box in canvas fractions
 
@@ -141,22 +141,24 @@ taken <- list(ivr, pin_r, inset_pl$r)
 sources <- "© OpenStreetMap contributors · US Census TIGER/Line 2022 · Natural Earth"
 plate_pl <- NULL
 if (style$title_mode == "plate") {
-  # measure with ragg itself (the device that draws it); textshaping/systemfonts
-  # string metrics fail on the instanced Caslon file
+  # measure with ragg itself, the device that draws it
   tw <- function(txt, fam, size) {
     agg_png(tempfile(fileext = ".png"), width = 1, height = 1, units = "in", res = 72)
     on.exit(invisible(dev.off()))
     grid::convertWidth(grid::grobWidth(grid::textGrob(txt, gp = grid::gpar(fontfamily = fam, fontsize = size * ts))),
                        "in", valueOnly = TRUE)
   }
-  # The logo is one unit (mark + wordmark + tagline): placed whole, never split or
-  # recoloured. It already says "Shipwright", so the plate titles the office only.
-  LOGO_IN <- 1.0 * ts
-  plate_title <- sub("^Shipwright · ", "", office$name)
+  # The logo is one unit (mark + wordmark + tagline): the official horizontal lockup,
+  # placed whole and unaltered. It already says "Shipwright", so the plate titles the office.
+  has_logo <- !is.null(style$logo) && file.exists(file.path(ROOT, style$logo))
+  logo_img <- if (has_logo) png::readPNG(file.path(ROOT, style$logo)) else NULL
+  LOGO_W <- 1.75 * ts
+  LOGO_H <- if (has_logo) LOGO_W * nrow(logo_img) / ncol(logo_img) else 0
+  plate_title <- sub("^Shipwright \u00B7 ", "", office$name)
   credit_lines <- c("\u00A9 OpenStreetMap contributors", "US Census TIGER/Line 2022 \u00B7 Natural Earth")
-  plate_w <- (0.12 + 0.24 + 0.14) * ts + (if (!is.null(style$logo)) LOGO_IN else 0) +
-    max(tw(plate_title, FT$title, 16), tw(office$subtitle, FT$label, 7), tw(credit_lines, FT$mono, 5))
-  plate_h <- LOGO_IN + 0.2 * ts
+  plate_w <- 0.36 * ts + max(if (has_logo) LOGO_W else 0, tw(plate_title, FT$title, 13),
+                             tw(office$subtitle, FT$label, 7), tw(credit_lines, FT$label, 5))
+  plate_h <- (0.14 + (if (has_logo) 0.22 else 0) + 0.24 + 0.17 + 0.24 + 0.14) * ts + LOGO_H
   plate_pl <- place(plate_w / map_w, plate_h / map_h, avoid = taken, corners = c("tl", "tr", "bl", "br"))
   taken <- c(taken, list(plate_pl$r))
 }
@@ -169,19 +171,20 @@ bar_wf <- max(km_m, nm_m) / ground_w_m
 sb_pl <- place(bar_wf + 0.06, 0.36 * ts / map_h, avoid = taken, corners = c("bl", "br", "tl", "tr"))
 
 # ---- text helpers ------------------------------------------------------------
-track <- function(s, family = "SW Sans") if (family == FT$mono) s else
-  vapply(strsplit(s, ""), function(ch) paste(ch, collapse = " "), "")
+# Hanken Grotesk has no hair/thin space, prime or ʻokina (they would fall back to
+# DejaVu), so: no letter-spacing, ' for minutes, ‘ for the ʻokina.
+glyph_safe <- function(s) gsub("\u02BB", "\u2018", s)
 title_case <- function(s) vapply(strsplit(tolower(s), "\n", fixed = TRUE),
   function(lines) paste(tools::toTitleCase(lines), collapse = "\n"), "")
 fmt_dm <- function(v, pos, neg) {
   a <- abs(v); d <- floor(a + 1e-9); m <- round((a - d) * 60)
   if (m == 60) { d <- d + 1; m <- 0 }
-  sprintf("%d°%02d′%s", d, m, if (v >= 0) pos else neg)
+  sprintf("%d°%02d'%s", d, m, if (v >= 0) pos else neg)
 }
 fmt_dd <- function(lat, lon) sprintf("%.5f° %s · %.5f° %s",
   abs(lat), if (lat >= 0) "N" else "S", abs(lon), if (lon >= 0) "E" else "W")
 rf <- signif(ground_w_m / (map_w * 0.0254), 2)
-scale_txt <- paste0("1:", formatC(rf, format = "d", big.mark = " "))
+scale_txt <- paste0("1:", formatC(rf, format = "d", big.mark = ","))
 today <- format(Sys.Date(), "%Y-%m-%d")
 
 halo_text <- function(df, family, face, size, colour, hjust = 0.5, vjust = 0.5)
@@ -206,18 +209,18 @@ g <- roads(g, L$freeways, C$freeway_case, C$freeway, 2.6, 1.5)
 lab <- L$labels; xy <- st_coordinates(lab)
 keep <- !(fx(xy[, 1]) > ivr[1] - 0.02 & fx(xy[, 1]) < ivr[3] + 0.02 & fy(xy[, 2]) > ivr[2] - 0.02 & fy(xy[, 2]) < ivr[4] + 0.02)
 # ... and labels whose anchor would sit under the inset card or the title plate
-for (q in list(inset_pl$r, plate_pl$r)) if (!is.null(q))
+for (q in list(inset_pl$r, plate_pl$r, sb_pl$r)) if (!is.null(q))
   keep <- keep & !(fx(xy[, 1]) > q[1] - 0.1 & fx(xy[, 1]) < q[3] + 0.1 & fy(xy[, 2]) > q[2] - 0.06 & fy(xy[, 2]) < q[4] + 0.06)
 lab <- lab[keep, ]; xy <- xy[keep, , drop = FALSE]
 is_water <- grepl("HARBOR|HARBOUR|OCEAN|WATERWAY|BAY|CHANNEL|LAGOON|RIVER|CANAL|SOUND|BASIN",
                   lab$name, ignore.case = TRUE)
 if (any(is_water))
   g <- g + halo_text(data.frame(x = xy[is_water, 1], y = xy[is_water, 2],
-                                label = title_case(lab$name[is_water])),
+                                label = glyph_safe(title_case(lab$name[is_water]))),
                      FT$water, if (isTRUE(style$water_italic)) "italic" else "plain", 7.6, C$water_label)
 if (any(!is_water))
   g <- g + halo_text(data.frame(x = xy[!is_water, 1], y = xy[!is_water, 2],
-                                label = track(toupper(lab$name[!is_water]))),
+                                label = glyph_safe(toupper(lab$name[!is_water]))),
                      FT$label, "bold", 5.9, C$label)
 
 # extent box + pin
@@ -228,7 +231,9 @@ g <- g + annotate("rect", xmin = iv[["xmin"]], xmax = iv[["xmax"]], ymin = iv[["
 # neatline ticks (drawing style)
 if (isTRUE(style$graticule)) {
   steps <- c(1, 2, 5, 10, 15, 20, 30, 60) / 60
-  st_lon <- steps[which.min(abs(dx / steps - 5))]; st_lat <- steps[which.min(abs(dy / steps - 4))]
+  # about one tick per 1.3 in across and 1.1 in down, whatever the printed size
+  st_lon <- steps[which.min(abs(dx / steps - max(2, round(map_w / 1.3))))]
+  st_lat <- steps[which.min(abs(dy / steps - max(2, round(map_h / 1.1))))]
   lons <- seq(ceiling(bb[["xmin"]] / st_lon) * st_lon, bb[["xmax"]], by = st_lon)
   lats <- seq(ceiling(bb[["ymin"]] / st_lat) * st_lat, bb[["ymax"]], by = st_lat)
   tlx <- 0.07 / map_h * dy; tly <- 0.07 / map_w * dx
@@ -236,6 +241,12 @@ if (isTRUE(style$graticule)) {
   cr0 <- inset_pl$r                       # no ticks hidden under the inset card
   lons <- lons[!(fx(lons) > cr0[1] - 0.03 & fx(lons) < cr0[3] + 0.03 & cr0[4] > 0.9)]
   lats <- lats[!(fy(lats) > cr0[2] - 0.03 & fy(lats) < cr0[4] + 0.03 & cr0[1] < 0.1)]
+  # tick labels give way to place labels near the top / left edges (widths estimated in inches)
+  lab_half_in <- nchar(sub("\n.*", "", lab$name)) * 5.9 * ts * 0.62 / 72 / 2
+  lons <- lons[!vapply(lons, function(l) any(abs(fx(l) - fx(xy[, 1])) * map_w < lab_half_in + 0.35 * ts &
+                                              fy(xy[, 2]) > 0.85), TRUE)]
+  lats <- lats[!vapply(lats, function(l) any(abs(fy(l) - fy(xy[, 2])) * map_h < 0.15 * ts &
+                                              fx(xy[, 1]) * map_w < lab_half_in + 0.7 * ts), TRUE)]
   g <- g +
     annotate("segment", x = lons, xend = lons, y = bb[["ymax"]], yend = bb[["ymax"]] - tlx,
              colour = C$ink, linewidth = lw(0.5)) +
@@ -344,24 +355,37 @@ if (style$title_mode == "header") {
 }
 
 if (style$title_mode == "block") {
-  b0 <- 0; b1 <- bh / H
-  cells <- list(
-    list(w = 0.38, k = "FIGURE",      v = office$name, v2 = office$subtitle),
-    list(w = 0.18, k = "COORDINATES", v = sprintf("%.5f° N", office$lat), v2 = sprintf("%.5f° W", abs(office$lon))),
-    list(w = 0.16, k = "SCALE",       v = scale_txt, v2 = "at 6.5 in width"),
-    list(w = 0.12, k = "DATE",        v = today, v2 = "rev A"),
-    list(w = 0.16, k = "SOURCES",     v = "OSM · TIGER 2022", v2 = "Natural Earth"))
-  x <- 0
-  for (i in seq_along(cells)) {
-    cl <- cells[[i]]; pad <- ix(0.06 * ts)
-    if (i > 1) canvas <- canvas + draw_line(x = c(x, x), y = c(b0, b1), colour = C$rule, linewidth = lw(0.5))
-    canvas <- canvas |>
-      lab_at(cl$k, x + pad, b1 - iy(0.08 * ts), FT$mono, "bold", 4.8, C$faint, vjust = 1) |>
-      lab_at(cl$v,  x + pad, b1 - iy(0.25 * ts), if (i == 1) FT$title else FT$mono,
-             if (i == 1) "bold" else "plain", if (i == 1) 8.4 else 6.4, C$ink, vjust = 1) |>
-      lab_at(cl$v2, x + pad, b1 - iy(0.42 * ts), if (i == 1) FT$label else FT$mono, "plain",
-             if (i == 1) 6.4 else 5.6, C$dim, vjust = 1)
-    x <- x + cl$w
+  width_txt <- sprintf("at %s in width", format(round(W, 2)))
+  fig  <- list(w = 0.38, k = "FIGURE",      v = office$name, v2 = office$subtitle)
+  crd  <- list(w = 0.18, k = "COORDINATES", v = sprintf("%.5f° N", office$lat), v2 = sprintf("%.5f° W", abs(office$lon)))
+  scl  <- list(w = 0.16, k = "SCALE",       v = scale_txt, v2 = width_txt)
+  dte  <- list(w = 0.12, k = "DATE",        v = today, v2 = "rev A")
+  src  <- list(w = 0.16, k = "SOURCES",     v = "OSM · TIGER 2022", v2 = "Natural Earth")
+  # one row of cells between y0 and y1 (canvas fractions); the first cell may be the figure title
+  cells_row <- function(cv, cells, y0, y1) {
+    x <- 0
+    for (i in seq_along(cells)) {
+      cl <- cells[[i]]; pad <- ix(0.06 * ts); title <- cl$k == "FIGURE"
+      if (i > 1) cv <- cv + draw_line(x = c(x, x), y = c(y0, y1), colour = C$rule, linewidth = lw(0.5))
+      cv <- cv |>
+        lab_at(cl$k, x + pad, y1 - iy(0.08 * ts), FT$mono, "bold", 4.8, C$faint, vjust = 1) |>
+        lab_at(cl$v,  x + pad, y1 - iy(0.25 * ts), FT$title, if (title) "bold" else "plain",
+               if (title) 8.4 else 6.4, C$ink, vjust = 1) |>
+        lab_at(cl$v2, x + pad, y1 - iy(0.42 * ts), FT$label, "plain", if (title) 6.4 else 5.6, C$dim, vjust = 1)
+      x <- x + cl$w
+    }
+    cv
+  }
+  b1 <- bh / H
+  if (narrow) {
+    mid <- b1 - iy(0.5 * ts)
+    fig$w <- 1
+    dte <- list(w = 0.30, k = "DATE · SOURCES", v = today, v2 = "OSM · TIGER 2022")
+    crd$w <- 0.38; scl$w <- 0.32
+    canvas <- cells_row(canvas, list(fig), mid, b1) |> cells_row(list(crd, scl, dte), 0, mid)
+    canvas <- canvas + draw_line(x = c(0, 1), y = c(mid, mid), colour = C$rule, linewidth = lw(0.5))
+  } else {
+    canvas <- cells_row(canvas, list(fig, crd, scl, dte, src), 0, b1)
   }
   canvas <- canvas +
     annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1, fill = NA, colour = C$rule, linewidth = lw(1)) +
@@ -371,24 +395,30 @@ if (style$title_mode == "block") {
 if (style$title_mode == "plate" && !is.null(plate_pl)) {
   pr <- plate_pl$r; p <- c(cx(pr[1]), cy(pr[2]), cx(pr[3]), cy(pr[4]))
   canvas <- canvas + annotate("rect", xmin = p[1], xmax = p[3], ymin = p[2], ymax = p[4], fill = C$paper, colour = NA)
-  lx <- p[1] + ix(0.12 * ts)
-  if (!is.null(style$logo) && file.exists(file.path(ROOT, style$logo))) {
-    lg <- png::readPNG(file.path(ROOT, style$logo))
-    canvas <- canvas + draw_grob(grid::rasterGrob(lg), lx, p[2] + iy(0.1 * ts), ix(LOGO_IN), iy(LOGO_IN))
-    lx <- lx + ix(LOGO_IN + 0.24 * ts)
-    canvas <- canvas + draw_line(x = c(lx - ix(0.12 * ts), lx - ix(0.12 * ts)), y = c(p[2] + iy(0.16 * ts), p[4] - iy(0.16 * ts)),
-                                 colour = C$rule, linewidth = lw(0.5))
+  px <- p[1] + ix(0.18 * ts); y <- p[4] - iy(0.14 * ts)
+  if (has_logo) {
+    canvas <- canvas + draw_grob(grid::rasterGrob(logo_img), px, y - iy(LOGO_H), ix(LOGO_W), iy(LOGO_H))
+    y <- y - iy(LOGO_H + 0.11 * ts)
+    canvas <- canvas + draw_line(x = c(px, p[3] - ix(0.18 * ts)), y = c(y, y), colour = C$rule, linewidth = lw(0.5))
+    y <- y - iy(0.11 * ts)
   }
   canvas <- canvas |>
-    lab_at(plate_title, lx, p[4] - iy(0.2 * ts), FT$title, "plain", 16, C$ink, vjust = 1) |>
-    lab_at(office$subtitle, lx, p[4] - iy(0.52 * ts), FT$label, "plain", 7, C$dim, vjust = 1) |>
-    lab_at(paste(credit_lines, collapse = "\n"), lx, p[2] + iy(0.14 * ts), FT$mono, "plain", 5, C$faint, vjust = 0, lh = 1.3)
+    lab_at(plate_title, px, y, FT$title, "bold", 13, C$ink, vjust = 1) |>
+    lab_at(office$subtitle, px, y - iy(0.25 * ts), FT$label, "plain", 7, C$dim, vjust = 1) |>
+    lab_at(paste(credit_lines, collapse = "\n"), px, p[2] + iy(0.14 * ts), FT$label, "plain", 5, C$faint, vjust = 0, lh = 1.3)
 }
 
-# ---- write -------------------------------------------------------------------
-out_dir <- file.path(ROOT, "outputs/comps"); dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-out <- file.path(out_dir, sprintf("%s-%s-%s.png", office_id, style_id, size_id))
+# ---- write: PNG (300 dpi), plus vector PDF and SVG with live Hanken text -----------
+out_dir <- file.path(ROOT, out_sub); dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+base <- file.path(out_dir, sprintf("%s-%s-%s", office_id, style_id, size_id))
+out <- paste0(base, ".png")
 agg_png(out, width = W, height = H, units = "in", res = DPI, background = C$paper)
 print(canvas); invisible(dev.off())
+if (!nzchar(Sys.getenv("COMP_PNG_ONLY"))) {
+  grDevices::cairo_pdf(paste0(base, ".pdf"), width = W, height = H, bg = C$paper)
+  print(canvas); invisible(dev.off())
+  svglite::svglite(paste0(base, ".svg"), width = W, height = H, bg = C$paper)
+  print(canvas); invisible(dev.off())
+}
 cat(sprintf("Wrote %s  (%.2f x %.2f in, inset %s, scale %s, %s)\n", out, W, H,
             inset_pl$corner, sb_pl$corner %||% "none", scale_txt))

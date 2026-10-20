@@ -1,9 +1,9 @@
-# Comp B — DRAWING. An engineering report figure: quiet grey base, the site is the only
-# colour, lat/lon ticks on the neatline, and a drawing-style title block below the map.
+# Style B — DRAWING (the app default). An engineering report figure: quiet grey base, the
+# site is the only colour, lat/lon ticks on the neatline, a drawing-style title block below.
 style <- list(
   id = "drawing", label = "B · Drawing",
   title_mode = "block",             # title block table under the map
-  fonts = list(title = "SW Sans", label = "SW Sans", water = "SW Sans", mono = "SW Mono"),
+  fonts = list(title = "Hanken Grotesk", label = "Hanken Grotesk", water = "Hanken Grotesk", mono = "Hanken Grotesk"),
   col = list(
     paper = "#FFFFFF", ink = "#1C1E21", dim = "#6B6E72", faint = "#9A9DA1", rule = "#1C1E21",
     land = "#F7F7F5", water = "#E1E8EC", coast = "#9AA7AE",

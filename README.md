@@ -1,87 +1,79 @@
 # Shipwright Maps (sw-maps)
 
-Reusable, parameterized R pipeline that renders a flat-vector cartographic
-**location map** for each Shipwright office: a main establishing map (regional
-context, optional shaded terrain) with an **inset closeup** of the office
-building, marked with a pin, plus a leader line tying the two together.
+Location maps for Shipwright project reports, rendered from open data by an R
+pipeline and served to the team at **https://sw-maps.exe.xyz** (exe.dev login,
+shared with the `sw` team).
 
-Outputs per office: a flat **PNG**, editable **SVG** and **PDF**, and a
-**layered SVG** whose named groups open as Illustrator layers.
+Each map is a figure laid out at its **printed size** (type in real points): a regional
+map with an inset close-up of the site, an extent box and connector lines, a km / nmi
+scale bar, a north arrow, and labels styled by class. The inset places itself in the
+nearest mostly-water corner. Outputs: 300 dpi **PNG**, vector **PDF** and **SVG** with
+live Hanken Grotesk text.
 
-![Hawaii](outputs/location-maps/shipwright-hawaii-location-map.png)
+## Styles and sizes
 
-## Render
+| Style (`styles/`) | Look | Use |
+|---|---|---|
+| `drawing` — **B · Drawing** (default) | quiet grey base, lat/lon ticks, title block below | project reports |
+| `platform` — A · Platform | BD-apps palette, light relief, header above | internal docs |
+| `mainsite` — C · Main site | horizontal logo plate, fuller sea and relief | proposals, collateral |
+
+Sizes: `report` 6.5 × 4.6 in, `half` 3.15 × 3.6 in, `slide` 13.33 × 7.5 in (16:9).
 
 ```sh
-Rscript scripts/location_map.R hawaii     # -> outputs/location-maps/shipwright-hawaii-location-map.{png,svg,pdf} + -layered.svg
-Rscript scripts/location_map.R florida
+Rscript scripts/comp_map.R hawaii drawing report outputs/maps   # -> outputs/maps/hawaii-drawing-report.{png,pdf,svg}
 ```
 
-A new office = one new file in `configs/`. No code changes needed for the common case.
-
-Scripts resolve the repo from `SW_MAPS_ROOT` (default `~/sw-projects/sw-maps`).
-
-## Web front — https://sw-maps.exe.xyz
-
-Team-private page (exe.dev login, shared with the `sw` team) listing every office in
-`configs/`, with a Re-render button and PNG / SVG / PDF / layered-SVG downloads.
-Runs on the `sw-maps` VM (exe-shipwright account) as `sw-maps.service`:
+## Web app
 
 ```
-app/plumber.R           routes: /  (page), POST /render/<id>, /files/* (outputs), /healthz
-app/serve.R             starts plumber on :8000 (exe.dev proxies HTTPS -> :8000)
+app/plumber.R           /  maps with style + size switchers, POST /render/<id>?style=&size=
+                        /comps (design comps), /view?f= (full size), /notes (review queue)
+                        /api/notes (JSON), /healthz
+app/static/notes.js     review notes: press N, click a spot, type a line
+app/serve.R             plumber on :8000 (exe.dev proxies HTTPS -> :8000)
 deploy/sw-maps.service  systemd unit (repo at /home/exedev/sw-maps)
 ```
 
-Deploy: `ssh sw-maps.exe.xyz 'cd ~/sw-maps && git pull && sudo systemctl restart sw-maps'`.
-The VM is the canonical renderer; Mac renders differ by ~1% of pixels (Arial
-version metrics, road antialiasing).
+Deploy: push to `main`, then
+`ssh sw-maps.exe.xyz 'cd ~/sw-maps && git fetch -q && git reset -q --hard origin/main && sudo systemctl restart sw-maps'`.
+Renders (`outputs/maps`, `outputs/comps`) and notes (`data/`) are untracked and survive this.
 
 ## Layout
 
 ```
 scripts/
-  location_map.R     orchestrator: reads a config, builds + composes, exports 4 formats
-  mod_mainmap.R      establishing map layers (TIGER + rnaturalearth): main_layers(), build_main()
-  mod_inset.R        styled inset card from cached OSM: build_inset()
-  mod_oceanfill.R    ocean/land polygons from OSM coastline: ocean_land()  (fixes the "buildings float in water" problem)
-  mod_terrain.R      soft hillshade for mountainous regions: terrain_layer()  (skipped where flat)
-  proof.R            OSM-fetch proof/scratch used to build the cached *-osm.rds
-configs/
-  hawaii.R           per-office PARAMS (defines `office`)
-  florida.R
-outputs/location-maps/
-  <slug>-location-map.{png,svg,pdf}   final renders
-  <slug>-location-map-layered.svg     named Illustrator layers
-  *-osm.rds, coastline-*.rds          cached OSM data (committed; renders offline)
+  comp_map.R         renderer: config + style + size -> composed figure (PNG/PDF/SVG)
+  mod_mainmap.R      regional layers (TIGER + Natural Earth): main_layers()
+  mod_inset.R        inset helpers from cached OSM (buildings, piers, water)
+  mod_oceanfill.R    ocean/land from the OSM coastline: ocean_land()
+  mod_terrain.R      hillshade blended toward the style's land colour: terrain_layer()
+  location_map.R     legacy renderer (original style + layered SVG for Illustrator)
+styles/              drawing.R, platform.R, mainsite.R (each defines `style`)
+configs/             hawaii.R, florida.R (each defines `office`)
+fonts/               Hanken Grotesk static instances (OFL)
+app/static/logo/     official horizontal logo: SVG master + transparent PNG for the renderer
+outputs/location-maps/  cached OSM / coastline .rds (committed; renders run offline) + legacy renders
 ```
 
 ## Adding an office
 
-1. Geocode the address; **ground-truth the exact building** against the OSM
-   footprint (don't trust the street-centroid the geocoder returns).
-2. Fetch the harbor/port OSM data (`buildings`, `natural=water`, `man_made=pier`)
-   for the inset bbox and save `outputs/location-maps/<slug>-osm.rds`
-   (see `scripts/proof.R`).
-3. Copy an existing `configs/*.R`, edit the params (bboxes, pin, labels, caption,
-   `use_terrain`, composition positions), and render.
+1. Geocode the address; **ground-truth the exact building** against the OSM footprint
+   (the geocoder's street centroid is not the building).
+2. Fetch the OSM `buildings`, `natural=water`, `man_made=pier` for the inset area and save
+   `outputs/location-maps/<name>-osm.rds` (see `scripts/fetch_florida_osm.R`).
+3. Copy a `configs/*.R`; set the pin, `main_bbox`, `inset_bbox` / `inset_view`, labels,
+   caption, `use_terrain`, TIGER state/county. Composition is automatic in `comp_map.R`
+   (the `title_*` / `inset_*` position fields are only used by the legacy renderer).
 
-## Layer stack (layered SVG)
+## Gotchas
 
-Bottom → top: `ocean → land → [terrain] → water → roads → marker → inset → text`.
-Two ordering rules that must hold: **terrain sits above land** (else land paints
-over the relief), and named **water sits above terrain** (else the hillshade —
-which doesn't read basins as below sea level — paints over the harbor). Always
-sanity-check the layered SVG's water, not just the PNG.
+- Fonts: Hanken Grotesk only. On the VM `fonts/` is on fontconfig's path
+  (`~/.config/fontconfig/fonts.conf`) so ragg, cairo_pdf and svglite all find it. Hanken has
+  no hair/thin space, prime or ʻokina: no letter-spacing, `'` for minutes, `‘` for the ʻokina.
+- The logo is one unit (mark + wordmark + tagline). Never crop or split it.
+- OSM/Overpass returns HTTP 406 without a User-Agent and rate-limits hard;
+  `mod_oceanfill.R` fetches with a UA and caches to disk.
+- The VM is the canonical renderer; other machines differ slightly in font metrics.
 
-## Notes / gotchas
-
-- Environment: R (Homebrew) + `sf`, `osmdata`, `tigris`, `ggplot2`, `cowplot`,
-  `ragg`, `svglite`, `rnaturalearth`, `elevatr`, `terra`; GDAL/GEOS/PROJ/udunits;
-  `librsvg` (`rsvg-convert`) to sanity-check SVGs.
-- OSM/Overpass returns HTTP 406 with no User-Agent (hangs `osmdata`); rate-limits
-  hard. `mod_oceanfill.R` fetches via a `curl` POST with a UA and caches to disk.
-- Fonts: uses Calluna Sans → Aptos → Arial if present, else the default sans.
-- Palette: ink `#101820`, marker gold `#F2C14E`, water `#9FC3D6`, land `#EDE7DB`.
-
-Basemap data © OpenStreetMap contributors; TIGER/US Census.
+Basemap data © OpenStreetMap contributors; US Census TIGER/Line; Natural Earth.

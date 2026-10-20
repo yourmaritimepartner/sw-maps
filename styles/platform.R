@@ -1,9 +1,9 @@
-# Comp A — PLATFORM. The BD-apps design language (ADR 0004) applied to a map figure:
-# Hanken Grotesk + IBM Plex Mono, warm neutrals, one navy accent, hairlines, header above.
+# Style A — PLATFORM. The BD-apps design language (ADR 0004) applied to a map figure:
+# Hanken Grotesk, warm neutrals with light relief, one navy accent, hairlines, header above.
 style <- list(
   id = "platform", label = "A · Platform",
   title_mode = "header",            # eyebrow + title + meta strip above the map
-  fonts = list(title = "SW Sans", label = "SW Sans", water = "SW Sans", mono = "SW Mono"),
+  fonts = list(title = "Hanken Grotesk", label = "Hanken Grotesk", water = "Hanken Grotesk", mono = "Hanken Grotesk"),
   col = list(
     paper = "#FFFFFF", ink = "#1C1E21", dim = "#6B6E72", faint = "#9A9DA1", rule = "#D9D9D4",
     land = "#F1F0EB", water = "#CFDFE8", coast = "#A9C2D0",
